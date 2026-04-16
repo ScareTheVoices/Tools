@@ -347,6 +347,8 @@
 
 		.link-btn {
 			text-decoration: none;
+			border: none;
+			cursor: pointer;
 			color: var(--highlight-ink);
 			background: linear-gradient(118deg, #7b2ea6, #190337);
 			border-radius: 9px;
@@ -631,7 +633,7 @@
 						<span class="badge">${humanFileSize(file.size)}</span>
 					</div>
 					<div class="links">
-						<a class="link-btn" href="${file.pagesUrl}" target="_blank" rel="noopener noreferrer">Open Tool Page</a>
+						<button class="link-btn" type="button" data-url="${file.pagesUrl}">Open Tool Page</button>
 					</div>
 				`;
 
@@ -639,6 +641,7 @@
 				if (openButton) {
 					openButton.addEventListener("click", () => {
 						setLastOpenedItem(file);
+						openPopout(file.pagesUrl);
 					});
 				}
 
@@ -685,6 +688,18 @@
 				metaRow.appendChild(pill);
 			}
 
+		}
+
+		function openPopout(url) {
+			const w = Math.min(1100, window.screen.availWidth - 60);
+			const h = Math.min(820, window.screen.availHeight - 60);
+			const left = Math.round((window.screen.availWidth - w) / 2);
+			const top = Math.round((window.screen.availHeight - h) / 2);
+			window.open(
+				url,
+				"toolpopout",
+				`width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes,toolbar=no,menubar=no,location=no,status=no`
+			);
 		}
 
 		function toPagesUrl(path) {
