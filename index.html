@@ -3,7 +3,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Tools Catalog</title>
+	<title>Tool Box | ScareTheVoices</title>
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
@@ -29,6 +29,10 @@
 
 		* {
 			box-sizing: border-box;
+		}
+
+		[hidden] {
+			display: none !important;
 		}
 
 		body {
@@ -397,7 +401,7 @@
 	<main class="page">
 		<section class="hero">
 			<div class="kicker">Live Repository Catalog</div>
-			<h1>ScareTheVoices Tools</h1>
+			<h1>Tool Box</h1>
 			<p>
 				A searchable catalog generated directly from your GitHub repo.
 				It scans only the ToolBox folder, groups scripts by type, keeps links to source files,
@@ -646,11 +650,12 @@
 		}
 
 		function updateLoadMoreVisibility() {
-			const hasMore = state.filtered.length > state.renderLimit;
-			moreWrap.hidden = !hasMore;
-			if (hasMore) {
-				const remaining = state.filtered.length - state.renderLimit;
+			const remaining = state.filtered.length - state.renderLimit;
+			if (remaining > 0) {
+				moreWrap.hidden = false;
 				loadMoreBtn.textContent = `Load More Tools (${remaining} remaining)`;
+			} else {
+				moreWrap.hidden = true;
 			}
 		}
 
@@ -672,7 +677,6 @@
 			}
 
 			pills.push(`Files indexed: ${total}`);
-			pills.push(`Total size: ${humanFileSize(totalSize)}`);
 
 			for (const text of pills) {
 				const pill = document.createElement("span");
