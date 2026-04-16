@@ -1,0 +1,3075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OBS Stream Overlay Creator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --accent: #7c5cbf;
+      --accent2: #a78bfa;
+      --border: #2e3350;
+      --text: #e2e8f0;
+      --text-muted: #8892b0;
+      --danger: #f87171;
+      --success: #34d399;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── TOP BAR ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      gap: 12px;
+    }
+    header h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--accent2);
+      white-space: nowrap;
+    }
+    header h1 span { color: var(--text-muted); font-weight: 400; }
+
+    .header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn {
+      padding: 7px 14px;
+      border-radius: 6px;
+      border: none;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: filter .15s, transform .1s;
+      white-space: nowrap;
+    }
+    .btn:hover { filter: brightness(1.15); }
+    .btn:active { transform: scale(.97); }
+    .btn-primary  { background: var(--accent);  color: #fff; }
+    .btn-secondary{ background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-danger   { background: var(--danger);   color: #fff; }
+    .btn-success  { background: var(--success);  color: #000; }
+
+    /* ── CANVAS SIZE SELECTOR ── */
+    .canvas-size-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 20px;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      font-size: 0.8rem;
+    }
+    .canvas-size-row label { color: var(--text-muted); }
+    .canvas-size-row select, .canvas-size-row input[type=number] {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 3px 6px;
+      font-size: 0.8rem;
+      width: 70px;
+    }
+    .canvas-size-row input[type=number] { width: 60px; }
+
+    /* ── MAIN LAYOUT ── */
+    .workspace {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── LEFT PANEL: Widget Palette ── */
+    .panel-left {
+      width: 190px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+    .panel-section-title {
+      padding: 10px 14px 6px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--text-muted);
+    }
+    .widget-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 14px;
+      width: 100%;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.85rem;
+      text-align: left;
+      transition: background .15s;
+    }
+    .widget-btn:hover { background: var(--surface2); }
+    .widget-btn .icon { font-size: 1.2rem; min-width: 22px; }
+
+    /* ── CENTER: Preview Canvas ── */
+    .canvas-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: auto;
+      background: repeating-conic-gradient(#1a1d2799 0% 25%, transparent 0% 50%) 0 0 / 20px 20px;
+      position: relative;
+    }
+    #preview-canvas {
+      position: relative;
+      background: transparent;
+      flex-shrink: 0;
+      overflow: hidden;
+      outline: 2px solid var(--border);
+    }
+
+    #transform-hud {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 30;
+      display: none;
+      background: rgba(15, 17, 23, 0.92);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.45;
+      pointer-events: none;
+      white-space: pre;
+    }
+
+    /* ── Overlay Elements ── */
+    .overlay-el {
+      position: absolute;
+      cursor: move;
+      user-select: none;
+      outline: 2px solid transparent;
+      transition: outline-color .1s;
+    }
+    .overlay-el:hover { outline-color: #ffffff44; }
+    .overlay-el.selected { outline-color: var(--accent2) !important; }
+    .overlay-el .resize-handle {
+      position: absolute;
+      bottom: -5px; right: -5px;
+      width: 12px; height: 12px;
+      background: var(--accent2);
+      border-radius: 3px;
+      cursor: se-resize;
+      z-index: 10;
+    }
+    .overlay-el .delete-btn {
+      position: absolute;
+      top: -10px; right: -10px;
+      width: 18px; height: 18px;
+      background: var(--danger);
+      border-radius: 50%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      cursor: pointer;
+      z-index: 10;
+      color: #fff;
+      font-weight: bold;
+      line-height: 1;
+    }
+    .overlay-el.selected .delete-btn { display: flex; }
+
+    /* Text widget */
+    .w-text { white-space: pre-wrap; word-break: break-word; }
+
+    /* Image widget */
+    .w-image { object-fit: contain; width: 100%; height: 100%; }
+
+    /* Clock widget */
+    .w-clock { font-family: monospace; }
+
+    /* Progress bar widget */
+    .w-progress { display: flex; flex-direction: column; gap: 2px; }
+    .w-progress .prog-label { font-size: .75em; }
+    .w-progress .prog-track { flex: 1; background: rgba(0,0,0,.4); border-radius: 4px; overflow: hidden; }
+    .w-progress .prog-fill  { height: 100%; border-radius: 4px; transition: width .3s; }
+
+    /* Alert ticker */
+    .w-ticker {
+      overflow: hidden;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+    }
+    .w-ticker .ticker-inner {
+      display: inline-block;
+      animation: ticker-scroll 18s linear infinite;
+    }
+    @keyframes ticker-scroll {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+
+    @keyframes float-bob {
+      0%, 100% { transform: translate(0, 0); }
+      50% { transform: translate(var(--float-x, 0px), var(--float-y, -8px)); }
+    }
+
+    /* Countdown */
+    .w-countdown { font-family: monospace; text-align: center; }
+
+    /* ── RIGHT PANEL: Properties ── */
+    .panel-right {
+      width: 240px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+    .props-empty {
+      padding: 20px 14px;
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      text-align: center;
+    }
+    .prop-group {
+      border-bottom: 1px solid var(--border);
+      padding: 10px 14px;
+    }
+    .prop-group-title {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .prop-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      margin-bottom: 6px;
+      font-size: 0.8rem;
+    }
+    .prop-row label { color: var(--text-muted); white-space: nowrap; }
+    .prop-row input,
+    .prop-row select,
+    .prop-row textarea {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-size: 0.8rem;
+      padding: 4px 6px;
+      flex: 1;
+      min-width: 0;
+    }
+    .prop-row textarea { resize: vertical; min-height: 54px; }
+    .prop-row input[type=color] {
+      padding: 2px;
+      width: 44px;
+      flex: none;
+      cursor: pointer;
+    }
+    .prop-row input[type=range] {
+      flex: 1;
+      accent-color: var(--accent2);
+    }
+    .prop-row input[type=checkbox] {
+      width: 16px; height: 16px;
+      accent-color: var(--accent2);
+      flex: none;
+    }
+
+    /* ── LAYERS PANEL at bottom of left panel ── */
+    .layers-panel {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 80px;
+    }
+    .layer-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+      transition: background .1s;
+    }
+    .layer-item:hover { background: var(--surface2); }
+    .layer-item.selected { background: #ffffff0f; color: var(--accent2); }
+    .layer-item.drag-over { border-top: 2px solid var(--accent2); }
+    .layer-item.dragging  { opacity: .35; }
+    .layer-item .layer-icon { font-size: 1rem; }
+    .layer-item .layer-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .layer-drag-handle { cursor: grab; font-size: .85rem; opacity: .35; flex-shrink: 0; }
+    .layer-drag-handle:hover { opacity: .8; }
+    .layer-vis { cursor: pointer; font-size: 0.9rem; opacity: .6; }
+    .layer-vis:hover { opacity: 1; }
+
+    /* ── Layer Groups ── */
+    .layers-toolbar {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 8px; min-height: 30px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .layer-group-header {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 14px;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.78rem; font-weight: 600;
+      color: var(--accent2);
+      cursor: pointer;
+      transition: background .1s;
+    }
+    .layer-group-header:hover { background: #2a2e44; }
+    .layer-group-header.group-selected { background: #ffffff0f; }
+    .layer-group-body .layer-item { padding-left: 26px; }
+    .layer-group-ungroup {
+      font-size: 0.72rem; opacity: .55; cursor: pointer;
+      padding: 1px 4px; border-radius: 3px;
+      background: transparent; border: none; color: var(--text);
+      flex-shrink: 0;
+    }
+    .layer-group-ungroup:hover { opacity: 1; background: var(--danger); color: #fff; }
+    .layer-check {
+      width: 13px; height: 13px;
+      accent-color: var(--accent2);
+      cursor: pointer; flex-shrink: 0;
+    }
+
+    /* ── Snackbar ── */
+    #snackbar {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(60px);
+      background: var(--success);
+      color: #000;
+      padding: 9px 20px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: transform .3s;
+      z-index: 1000;
+      pointer-events: none;
+    }
+    #snackbar.show { transform: translateX(-50%) translateY(0); }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed; inset: 0;
+      background: #00000088;
+      z-index: 500;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    .modal h2 { margin-bottom: 12px; font-size: 1rem; }
+    .modal p  { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 12px; line-height: 1.6; }
+    .modal textarea {
+      width: 100%; height: 160px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: monospace;
+      font-size: 0.72rem;
+      padding: 8px;
+      resize: vertical;
+    }
+    .modal-actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+  </style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<header>
+  <h1>OBS Overlay Creator <span>— drag, drop, export</span></h1>
+  <div class="header-actions">
+    <button class="btn btn-secondary" id="btn-clear">🗑 Clear All</button>
+    <button class="btn btn-secondary" id="btn-import-html">📄 Import HTML</button>
+    <button class="btn btn-primary"   id="btn-export">⬇ Export Overlay HTML</button>
+  </div>
+</header>
+
+<!-- CANVAS SIZE ROW -->
+<div class="canvas-size-row">
+  <label>Canvas:</label>
+  <select id="preset-size">
+    <option value="1920x1080" selected>1920×1080 (Full HD)</option>
+    <option value="1280x720">1280×720 (HD)</option>
+    <option value="2560x1440">2560×1440 (2K)</option>
+    <option value="3840x2160">3840×2160 (4K)</option>
+    <option value="custom">Custom…</option>
+  </select>
+  <label>W:</label><input type="number" id="canvas-w" value="1920" min="200" max="7680" />
+  <label>H:</label><input type="number" id="canvas-h" value="1080" min="100" max="4320" />
+  <label style="margin-left:auto">Zoom:</label>
+  <input type="range" id="zoom-range" min="10" max="100" value="45" style="width:90px;accent-color:var(--accent2)" />
+  <span id="zoom-label" style="min-width:36px;font-size:.8rem">45%</span>
+</div>
+
+<!-- WORKSPACE -->
+<div class="workspace">
+
+  <!-- LEFT: widget palette + layers -->
+  <div class="panel-left">
+    <div class="panel-section-title">Add Widget</div>
+    <button class="widget-btn" data-type="text">      <span class="icon">T</span> Text Label</button>
+    <button class="widget-btn" data-type="clock">     <span class="icon">🕐</span> Live Clock</button>
+    <button class="widget-btn" data-type="countdown"> <span class="icon">⏳</span> Countdown Timer</button>
+    <button class="widget-btn" data-type="image">     <span class="icon">🖼</span> Image / Logo</button>
+    <button class="widget-btn" data-type="progress">  <span class="icon">📊</span> Progress Bar</button>
+    <button class="widget-btn" data-type="ticker">    <span class="icon">📰</span> Scrolling Ticker</button>
+    <button class="widget-btn" data-type="box">       <span class="icon">▭</span> Shape / Box</button>
+    <button class="widget-btn" data-type="utility">   <span class="icon">🧰</span> Utility</button>
+
+    <div class="panel-section-title" style="margin-top:8px">Layers</div>
+    <div class="layers-panel" id="layers-panel"></div>
+  </div>
+
+  <!-- CENTER: canvas -->
+  <div class="canvas-container" id="canvas-container">
+    <div id="transform-hud"></div>
+    <div id="preview-canvas"></div>
+  </div>
+
+  <!-- RIGHT: properties -->
+  <div class="panel-right" id="props-panel">
+    <div class="props-empty">Select a widget to edit its properties.</div>
+  </div>
+</div>
+
+<!-- Export modal -->
+<div class="modal-backdrop" id="export-modal">
+  <div class="modal">
+    <h2>⬇ Export Overlay HTML</h2>
+    <p>Copy the code below and save it as <strong>.html</strong>. In OBS, add a <strong>Browser Source</strong> and set it to a Local File pointing to this file. Set the browser source size to match your canvas dimensions.</p>
+    <textarea id="export-code" readonly></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="btn-modal-close">Close</button>
+      <button class="btn btn-primary"   id="btn-copy-code">📋 Copy to Clipboard</button>
+      <button class="btn btn-success"   id="btn-download-html">💾 Download .html</button>
+    </div>
+  </div>
+</div>
+
+<div id="snackbar"></div>
+
+<!-- Hidden file input for HTML import -->
+<input type="file" id="file-import-html" accept=".html,.htm,text/html" style="display:none" />
+<input type="file" id="file-image-upload" accept="image/*" style="display:none" />
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════
+let elements = [];   // array of element data objects
+let groups = [];     // array of group objects
+let nextId = 1;
+let nextGroupId = 1;
+let selectedId = null;
+let selectedGroupId = null;  // which group header is "selected" in layers
+let selectedIds = new Set(); // multi-select for grouping
+let clipboardWidget = null;
+let canvasW = 1920, canvasH = 1080;
+let zoom = 0.45;
+
+const twitchState = {
+  ws: null,
+  connected: false,
+  isAnon: false,
+  channel: '',
+  username: '',
+  token: '',
+};
+
+const utilityBubbleSims = new Map();
+const utilityControlTimers = new Map();
+
+// ═══════════════════════════════════════════════════════════
+//  CANVAS SIZING
+// ═══════════════════════════════════════════════════════════
+const previewCanvas = document.getElementById('preview-canvas');
+const transformHud  = document.getElementById('transform-hud');
+const zoomRange     = document.getElementById('zoom-range');
+const zoomLabel     = document.getElementById('zoom-label');
+const canvasWInput  = document.getElementById('canvas-w');
+const canvasHInput  = document.getElementById('canvas-h');
+
+function applyCanvasSize() {
+  canvasW = parseInt(canvasWInput.value) || 1920;
+  canvasH = parseInt(canvasHInput.value) || 1080;
+  previewCanvas.style.width  = (canvasW * zoom) + 'px';
+  previewCanvas.style.height = (canvasH * zoom) + 'px';
+  // scale all element DOM nodes
+  document.querySelectorAll('.overlay-el').forEach(el => scaleElement(el));
+}
+
+document.getElementById('preset-size').addEventListener('change', e => {
+  if (e.target.value === 'custom') return;
+  const [w, h] = e.target.value.split('x').map(Number);
+  canvasWInput.value = w; canvasHInput.value = h;
+  applyCanvasSize();
+});
+canvasWInput.addEventListener('change', () => { applyCanvasSize(); });
+canvasHInput.addEventListener('change', () => { applyCanvasSize(); });
+
+zoomRange.addEventListener('input', () => {
+  zoom = zoomRange.value / 100;
+  zoomLabel.textContent = zoomRange.value + '%';
+  applyCanvasSize();
+});
+
+function scaleElement(domEl) {
+  const data = getDataById(parseInt(domEl.dataset.id));
+  if (!data) return;
+  domEl.style.left   = (data.x * zoom) + 'px';
+  domEl.style.top    = (data.y * zoom) + 'px';
+  domEl.style.width  = (data.w * zoom) + 'px';
+  domEl.style.height = (data.h * zoom) + 'px';
+}
+
+function floatVector(direction, distance) {
+  switch (String(direction || 'up-down')) {
+    case 'left-right':
+      return { x: distance, y: 0 };
+    case 'diag-down-right':
+      return { x: distance, y: distance };
+    case 'diag-up-right':
+      return { x: distance, y: -distance };
+    default:
+      return { x: 0, y: -distance };
+  }
+}
+
+function animationStyle(data, scale = 1) {
+  if (!data || !data.animate) return '';
+  const type = String(data.animType || 'float');
+  if (type !== 'float') return '';
+
+  const speed = Math.max(0.2, parseFloat(data.animSpeed || 4));
+  const dist = Math.max(2, Math.round(10 * Math.max(0.1, scale)));
+  const vec = floatVector(data.floatDirection, dist);
+  return `animation:float-bob ${speed}s ease-in-out infinite;--float-x:${vec.x}px;--float-y:${vec.y}px;will-change:transform;`;
+}
+
+// ─── GROUP HELPERS ───────────────────────────────────────
+function getGroupById(id) { return groups.find(g => g.id === id); }
+
+function effectiveAnimStyle(data, scale = 1) {
+  let src = null;
+  if (data.groupId) {
+    const grp = getGroupById(data.groupId);
+    if (grp && grp.animate) src = grp;
+  }
+  if (!src && data.animate) src = data;
+  if (!src) return '';
+  const type = String(src.animType || 'float');
+  if (type !== 'float') return '';
+  const speed = Math.max(0.2, parseFloat(src.animSpeed || 4));
+  const dist = Math.max(2, Math.round(10 * Math.max(0.1, scale)));
+  const vec = floatVector(src.floatDirection, dist);
+  return `animation:float-bob ${speed}s ease-in-out infinite;--float-x:${vec.x}px;--float-y:${vec.y}px;will-change:transform;`;
+}
+
+function applyWrapperAnimation(el, data) {
+  const animStr = effectiveAnimStyle(data, zoom);
+  if (animStr) {
+    const pairs = animStr.split(';').filter(Boolean);
+    pairs.forEach(pair => {
+      const ci = pair.indexOf(':');
+      if (ci < 1) return;
+      const prop = pair.slice(0, ci).trim();
+      const val = pair.slice(ci + 1).trim();
+      if (prop.startsWith('--')) { el.style.setProperty(prop, val); }
+      else { el.style[prop.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = val; }
+    });
+  } else {
+    el.style.animation = '';
+    el.style.willChange = '';
+    el.style.removeProperty('--float-x');
+    el.style.removeProperty('--float-y');
+  }
+}
+
+function groupSelected() {
+  const ids = [...selectedIds];
+  if (ids.length < 2) { showSnack('Select 2+ layers to group', 'var(--danger)'); return; }
+  const grp = {
+    id: nextGroupId++,
+    name: `Group ${groups.length + 1}`,
+    animate: false, animType: 'float', floatDirection: 'up-down', animSpeed: 4,
+    collapsed: false,
+  };
+  groups.push(grp);
+  ids.forEach(id => { const d = getDataById(id); if (d) d.groupId = grp.id; });
+  selectedIds.clear();
+  selectedId = null;
+  selectedGroupId = grp.id;
+  document.querySelectorAll('.overlay-el').forEach(el => el.classList.remove('selected'));
+  renderLayersPanel();
+  renderPropsPanel();
+  showSnack(`Grouped ${ids.length} layers into "${grp.name}"`);
+}
+
+function ungroupGroup(gid) {
+  const memberIds = elements.filter(d => d.groupId === gid).map(d => d.id);
+  elements.forEach(d => { if (d.groupId === gid) d.groupId = null; });
+  groups = groups.filter(g => g.id !== gid);
+  if (selectedGroupId === gid) selectedGroupId = null;
+  memberIds.forEach(id => {
+    const el = previewCanvas.querySelector(`[data-id="${id}"]`);
+    if (el) { const d = getDataById(id); if (d) applyWrapperAnimation(el, d); }
+  });
+  renderLayersPanel();
+  deselectAll();
+  showSnack('Ungrouped');
+}
+
+function refreshGroupMembers(gid) {
+  elements.forEach(d => { if (d.groupId === gid) refreshElement(d.id); });
+}
+
+function buildLayerRows() {
+  const rows = [];
+  elements.forEach(d => {
+    if (!d.groupId) rows.push({ type: 'element', data: d, sortZ: d.zIndex });
+  });
+  const seen = new Set();
+  groups.forEach(grp => {
+    if (seen.has(grp.id)) return;
+    seen.add(grp.id);
+    const members = elements.filter(d => d.groupId === grp.id);
+    if (!members.length) return;
+    const maxZ = Math.max(...members.map(d => d.zIndex));
+    rows.push({ type: 'group', grp, members: [...members].sort((a, b) => b.zIndex - a.zIndex), sortZ: maxZ });
+  });
+  rows.sort((a, b) => b.sortZ - a.sortZ);
+  return rows;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════
+function getDataById(id) { return elements.find(e => e.id === id); }
+function showSnack(msg, color = 'var(--success)') {
+  const s = document.getElementById('snackbar');
+  s.textContent = msg; s.style.background = color;
+  s.classList.add('show');
+  setTimeout(() => s.classList.remove('show'), 2400);
+}
+
+function showTransformHud(data, mode) {
+  if (!transformHud) return;
+  const left = Math.round(data.x);
+  const top = Math.round(data.y);
+  const right = Math.round(canvasW - (data.x + data.w));
+  const bottom = Math.round(canvasH - (data.y + data.h));
+
+  transformHud.textContent =
+`${mode}
+◀ ${Math.max(0, left)}px  ▶ ${Math.max(0, right)}px
+▲ ${Math.max(0, top)}px  ▼ ${Math.max(0, bottom)}px`;
+  transformHud.style.display = 'block';
+}
+
+function hideTransformHud() {
+  if (!transformHud) return;
+  transformHud.style.display = 'none';
+}
+
+function normalizeOauthToken(token) {
+  const t = String(token || '').trim();
+  if (!t) return '';
+  return t.startsWith('oauth:') ? t : `oauth:${t}`;
+}
+
+function parseTwitchTags(tagPart) {
+  const tags = {};
+  String(tagPart || '').split(';').forEach(pair => {
+    const i = pair.indexOf('=');
+    if (i === -1) return;
+    tags[pair.slice(0, i)] = pair.slice(i + 1);
+  });
+  return tags;
+}
+
+function normalizeChannelName(channel) {
+  return String(channel || '').trim().toLowerCase().replace(/^#/, '');
+}
+
+function normalizeUtilityColor(color, fallback = '') {
+  const text = String(color || '').trim();
+  return text || fallback;
+}
+
+function utilityColorToPickerValue(color, fallback = '#a78bfa') {
+  const raw = String(color || '').trim();
+  if (!raw) return fallback;
+
+  const shortHex = raw.match(/^#([0-9a-fA-F]{3})$/);
+  if (shortHex) {
+    const [r, g, b] = shortHex[1].split('');
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+
+  const fullHex = raw.match(/^#([0-9a-fA-F]{6})$/);
+  if (fullHex) return `#${fullHex[1].toLowerCase()}`;
+
+  const rgb = raw.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+  if (rgb) {
+    const clamp = n => Math.max(0, Math.min(255, parseInt(n, 10) || 0));
+    const toHex = n => clamp(n).toString(16).padStart(2, '0');
+    return `#${toHex(rgb[1])}${toHex(rgb[2])}${toHex(rgb[3])}`;
+  }
+
+  return fallback;
+}
+
+function ensureUtilityStreams(data) {
+  if (!data || data.type !== 'utility') return [];
+  const existing = Array.isArray(data.utilStreams) ? data.utilStreams : [];
+  if (!existing.length) {
+    const fallbackChannel = normalizeChannelName(data.channel || '');
+    data.utilStreams = [{ channel: fallbackChannel, color: '#a78bfa' }];
+    data.channel = fallbackChannel;
+    return data.utilStreams;
+  }
+
+  data.utilStreams = existing.map((stream, idx) => {
+    const hasChannelProp = !!stream && Object.prototype.hasOwnProperty.call(stream, 'channel');
+    const sourceChannel = hasChannelProp ? stream.channel : (idx === 0 ? data.channel : '');
+    const channel = normalizeChannelName(sourceChannel || '');
+    const color = normalizeUtilityColor(stream?.color, '#a78bfa');
+    return { channel, color };
+  });
+
+  if (String(data.utilMode || 'chat') === 'tags' && data.utilStreams.length > 1) {
+    data.utilStreams = [data.utilStreams[0]];
+  }
+
+  data.channel = normalizeChannelName(data.utilStreams[0]?.channel || data.channel);
+  return data.utilStreams;
+}
+
+function normalizeUtilityCommandAction(action) {
+  const raw = String(action || '').trim().toLowerCase();
+  if (!raw) return '';
+  if (['show-text', 'show text', 'text'].includes(raw)) return 'show-text';
+  if (['display-image', 'display image', 'image', 'show-image', 'show image'].includes(raw)) return 'display-image';
+  if (['scroll-text', 'scroll text', 'scrolling-text', 'scrolling text', 'ticker'].includes(raw)) return 'scroll-text';
+  if (['chat-message', 'chat message', 'send-message', 'send message', 'reply', 'say'].includes(raw)) return 'chat-message';
+  return '';
+}
+
+function utilityControlDurationSec(action, value, durationRaw) {
+  const parsed = parseFloat(durationRaw);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  if (action === 'scroll-text') {
+    const msgLen = String(value || '').trim().length;
+    return Math.max(5, Math.min(18, 4 + (msgLen / 12)));
+  }
+  if (action === 'chat-message') return 0;
+  return 4;
+}
+
+function parseUtilityCommands(data) {
+  if (!data || data.type !== 'utility') return [];
+  const text = String(data.utilCommandsText || '');
+  const out = [];
+  text.split(/\r?\n/).forEach((line, index) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) return;
+    const parts = trimmed.split('|');
+    if (parts.length < 2) return;
+    const prompt = String(parts[0] || '').trim().toLowerCase();
+    const action = normalizeUtilityCommandAction(parts[1]);
+    if (!prompt || !action) return;
+    const value = String(parts[2] || '').trim();
+    const duration = utilityControlDurationSec(action, value, parts[3]);
+    const reply = String(parts[4] || '').trim();
+    out.push({ prompt, action, value, duration, reply, line: index + 1 });
+  });
+  return out;
+}
+
+function utilityCommandTemplate(str, ctx) {
+  const room = normalizeChannelName(ctx?.room || '');
+  const user = String(ctx?.user || '').trim();
+  const msg = String(ctx?.message || '').trim();
+  return String(str || '')
+    .replace(/\{user\}/gi, user)
+    .replace(/\{channel\}/gi, room)
+    .replace(/\{message\}/gi, msg);
+}
+
+function findUtilityCommandMatch(data, message) {
+  if (!data || data.type !== 'utility' || !data.utilControlsEnabled) return null;
+  const raw = String(message || '').trim();
+  if (!raw) return null;
+  const token = raw.split(/\s+/)[0].toLowerCase();
+  if (!token.startsWith('!')) return null;
+  const commands = parseUtilityCommands(data);
+  return commands.find(cmd => cmd.prompt === token) || null;
+}
+
+function clearUtilityControlTimer(id) {
+  const timer = utilityControlTimers.get(id);
+  if (!timer) return;
+  clearTimeout(timer);
+  utilityControlTimers.delete(id);
+}
+
+function clearUtilityReaction(id) {
+  const data = getDataById(id);
+  clearUtilityControlTimer(id);
+  if (!data || data.type !== 'utility') return;
+  data.utilReaction = null;
+  refreshElement(id);
+}
+
+function queueUtilityReaction(data, reaction, durationSec) {
+  if (!data || data.type !== 'utility') return;
+  clearUtilityControlTimer(data.id);
+  const duration = Math.max(0, parseFloat(durationSec || 0));
+  data.utilReaction = {
+    kind: reaction.kind,
+    text: String(reaction.text || ''),
+    image: String(reaction.image || ''),
+    duration,
+    stamp: Date.now(),
+  };
+  refreshElement(data.id);
+  if (duration > 0) {
+    const t = setTimeout(() => clearUtilityReaction(data.id), Math.round(duration * 1000));
+    utilityControlTimers.set(data.id, t);
+  }
+}
+
+function sendTwitchChatMessage(room, message, ws = null) {
+  const channel = normalizeChannelName(room || '');
+  const text = String(message || '').trim();
+  const socket = ws || twitchState.ws;
+  if (!channel || !text || !socket || socket.readyState !== WebSocket.OPEN) return false;
+  if (twitchState.isAnon) return false;
+  try {
+    socket.send(`PRIVMSG #${channel} :${text}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function executeUtilityChatControl(data, command, ctx = {}) {
+  if (!data || data.type !== 'utility' || !command) return;
+  const value = utilityCommandTemplate(command.value, ctx);
+  const reply = utilityCommandTemplate(command.reply, ctx);
+
+  if (command.action === 'show-text') {
+    queueUtilityReaction(data, { kind: 'text', text: value || ' ' }, command.duration);
+  } else if (command.action === 'display-image') {
+    queueUtilityReaction(data, { kind: 'image', image: value }, command.duration);
+  } else if (command.action === 'scroll-text') {
+    queueUtilityReaction(data, { kind: 'scroll', text: value || ' ' }, command.duration);
+  } else if (command.action === 'chat-message') {
+    sendTwitchChatMessage(ctx.room, value, ctx.ws);
+  }
+
+  if (reply) {
+    sendTwitchChatMessage(ctx.room, reply, ctx.ws);
+  }
+}
+
+function utilityStreamMap(data) {
+  const map = new Map();
+  ensureUtilityStreams(data).forEach((stream, index) => {
+    const channel = normalizeChannelName(stream.channel);
+    if (!channel || map.has(channel)) return;
+    map.set(channel, {
+      index,
+      channel,
+      color: normalizeUtilityColor(stream.color, utilityAccentColor(channel)),
+    });
+  });
+  return map;
+}
+
+function utilityStreamColorForRoom(data, room) {
+  const channel = normalizeChannelName(room || '');
+  if (!channel) return '';
+  const stream = utilityStreamMap(data).get(channel);
+  return normalizeUtilityColor(stream?.color, '');
+}
+
+function widgetUsesAnyChannel(data, channels) {
+  if (!data || data.type !== 'utility') return false;
+  const mapped = utilityStreamMap(data);
+  return channels.some(ch => mapped.has(ch));
+}
+
+function setUtilityStatusByChannels(channels, status, connected) {
+  elements.forEach(d => {
+    if (d.type !== 'utility') return;
+    if (!widgetUsesAnyChannel(d, channels)) return;
+    d.utilStatus = status;
+    d.utilConnected = !!connected;
+    refreshElement(d.id);
+  });
+}
+
+function pushUtilityItem(data, line) {
+  data.utilItems = data.utilItems || [];
+  data.utilItems.push(line);
+  const keep = Math.max(1, parseInt(data.maxItems || 6));
+  if (data.utilItems.length > keep) data.utilItems = data.utilItems.slice(-keep);
+  if (!appendUtilityItemLive(data, line)) {
+    refreshElement(data.id);
+  }
+}
+
+function normalizeUtilityItem(item) {
+  if (item && typeof item === 'object') {
+    const user = String(item.user || '');
+    const message = String(item.message || item.text || '');
+    const text = String(item.text || (user ? `${user}: ${message}` : message));
+    const room = normalizeChannelName(item.room || '');
+    const color = normalizeUtilityColor(item.color || '');
+    const chatterColor = normalizeUtilityColor(item.chatterColor || '');
+    return { kind: item.kind || (user ? 'chat' : 'line'), user, message, text, room, color, chatterColor };
+  }
+
+  const text = String(item ?? '');
+  const splitAt = text.indexOf(': ');
+  if (splitAt > 0) {
+    return {
+      kind: 'chat',
+      user: text.slice(0, splitAt),
+      message: text.slice(splitAt + 2),
+      text,
+      room: '',
+      color: '',
+      chatterColor: '',
+    };
+  }
+
+  return { kind: 'line', user: '', message: text, text, room: '', color: '', chatterColor: '' };
+}
+
+function utilityItemText(item) {
+  const normalized = normalizeUtilityItem(item);
+  return normalized.text || (normalized.user ? `${normalized.user}: ${normalized.message}` : normalized.message);
+}
+
+function utilityAccentColor(seed) {
+  const source = String(seed || 'chat');
+  let hash = 0;
+  for (let i = 0; i < source.length; i++) {
+    hash = ((hash << 5) - hash) + source.charCodeAt(i);
+    hash |= 0;
+  }
+  return `hsl(${Math.abs(hash) % 360} 72% 62%)`;
+}
+
+function utilityItemAccent(item, data, index = 0) {
+  const customEnabled = !!data?.utilCustomColors;
+  const streamColor = utilityStreamColorForRoom(data, item?.room);
+  if (customEnabled) {
+    return normalizeUtilityColor(streamColor, normalizeUtilityColor(data?.color, '#ffffff'));
+  }
+  const dynamicFallback = utilityAccentColor(item?.user || item?.room || index || 'chat');
+  return normalizeUtilityColor(item?.chatterColor, dynamicFallback);
+}
+
+function utilityItemMessageColor(item, data, index = 0) {
+  return normalizeUtilityColor(data?.color, '#ffffff');
+}
+
+function utilityChatStyle(data) {
+  data.utilMode = 'chat';
+  return String(data.utilStyle || 'normal');
+}
+
+function renderUtilityReactionHtml(data, scale) {
+  const reaction = data?.utilReaction;
+  if (!reaction || !reaction.kind) return '';
+
+  const duration = Math.max(1, parseFloat(reaction.duration || 4));
+  const animName = `ut_react_${data.id}`;
+  const holdEnd = Math.max(65, Math.min(92, Math.round((duration - 0.5) / duration * 100)));
+  const padY = Math.max(8, Math.round(10 * scale));
+  const padX = Math.max(12, Math.round(16 * scale));
+  const fontSize = Math.max(14, Math.round((data.fontSize || 16) * scale * 1.15));
+
+  const baseWrap = `position:absolute;left:${Math.max(4, Math.round(6 * scale))}px;right:${Math.max(4, Math.round(6 * scale))}px;bottom:${Math.max(4, Math.round(6 * scale))}px;z-index:4;pointer-events:none;animation:${animName} ${duration}s ease-in-out forwards`;
+
+  if (reaction.kind === 'text') {
+    return `<style>@keyframes ${animName}{0%{transform:translateY(120%);opacity:0}12%{transform:translateY(0);opacity:1}${holdEnd < 100 ? `${holdEnd}%{transform:translateY(0);opacity:1}` : ''}100%{transform:translateY(120%);opacity:0}}</style>
+    <div style="${baseWrap}">
+      <div style="padding:${padY}px ${padX}px;border-radius:${Math.max(12, Math.round(16 * scale))}px;background:linear-gradient(135deg, rgba(8,10,18,.92), rgba(36,44,70,.88));border:1px solid rgba(255,255,255,.16);font-size:${fontSize}px;line-height:1.2;color:${escHtml(data.color || '#ffffff')};font-family:${data.fontFamily};font-weight:800;text-align:center;box-shadow:0 ${Math.max(10, Math.round(14 * scale))}px ${Math.max(20, Math.round(26 * scale))}px rgba(0,0,0,.28)">${escHtml(reaction.text)}</div>
+    </div>`;
+  }
+
+  if (reaction.kind === 'image') {
+    return `<style>@keyframes ${animName}{0%{transform:translateY(120%);opacity:0}10%{transform:translateY(0);opacity:1}${holdEnd < 100 ? `${holdEnd}%{transform:translateY(0);opacity:1}` : ''}100%{transform:translateY(120%);opacity:0}}</style>
+    <div style="${baseWrap};display:flex;justify-content:center;align-items:flex-end">
+      <div style="padding:${Math.max(4, Math.round(6 * scale))}px;border-radius:${Math.max(10, Math.round(14 * scale))}px;background:rgba(0,0,0,.62);border:1px solid rgba(255,255,255,.14)">
+        <img src="${escHtml(reaction.image)}" alt="" style="display:block;max-width:100%;max-height:${Math.max(40, Math.round(data.h * 0.8 * scale))}px;object-fit:contain" />
+      </div>
+    </div>`;
+  }
+
+  if (reaction.kind === 'scroll') {
+    const line = escHtml(reaction.text || '');
+    const marqueeName = `ut_react_scroll_${data.id}`;
+    const loops = line ? `${line}   ✦   ${line}   ✦   ${line}` : '';
+    const speed = Math.max(5, Math.min(24, duration - 0.4));
+    return `<style>
+      @keyframes ${animName}{0%{transform:translateY(115%);opacity:0}12%{transform:translateY(0);opacity:1}${holdEnd < 100 ? `${holdEnd}%{transform:translateY(0);opacity:1}` : ''}100%{transform:translateY(115%);opacity:0}}
+      @keyframes ${marqueeName}{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+    </style>
+    <div style="${baseWrap};overflow:hidden;border-radius:${Math.max(12, Math.round(16 * scale))}px;background:linear-gradient(90deg, rgba(8,10,16,.95), rgba(35,45,72,.92));border:1px solid rgba(255,255,255,.14);padding:${Math.max(7, Math.round(9 * scale))}px ${Math.max(10, Math.round(14 * scale))}px;box-shadow:0 ${Math.max(8, Math.round(12 * scale))}px ${Math.max(20, Math.round(24 * scale))}px rgba(0,0,0,.26)">
+      <div style="white-space:nowrap;display:inline-block;min-width:200%;font-size:${fontSize}px;line-height:1.1;font-family:${data.fontFamily};font-weight:800;color:${escHtml(data.color || '#ffffff')};animation:${marqueeName} ${speed}s linear 1 both">${loops}</div>
+    </div>`;
+  }
+
+  return '';
+}
+
+function utilityBubbleItemHtml(item, data, scale, index, total, animate = true) {
+  const bodyFont = Math.max(10, Math.round((data.fontSize || 16) * scale));
+  const accent = utilityItemAccent(item, data, index);
+  const messageColor = utilityItemMessageColor(item, data, index);
+  const laneCount = Math.max(3, Math.min(8, Math.ceil(Math.sqrt(Math.max(1, total) * 1.8))));
+  const lane = index % laneCount;
+  const stack = Math.floor(index / laneCount);
+  const laneStep = laneCount > 1 ? (86 / (laneCount - 1)) : 0;
+  const left = 7 + (lane * laneStep);
+  const maxWidth = Math.max(18, Math.floor((88 / laneCount) - 3));
+  const rise = 120 + (stack * 96);
+  const duration = 5 + (stack * 0.34);
+  const delay = stack * 0.16;
+  const bottom = -20 - (stack * 6);
+  const roomTag = item.room
+    ? `<div style="font-size:${Math.max(8, Math.round(bodyFont * 0.52))}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${accent};opacity:.9;margin-bottom:${Math.max(2, Math.round(2 * scale))}px">#${escHtml(item.room)}</div>`
+    : '';
+  const label = item.user
+    ? `<div style="font-size:${Math.max(9, Math.round(bodyFont * 0.62))}px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:${accent};margin-bottom:${Math.max(2, Math.round(2 * scale))}px">${escHtml(item.user)}</div>`
+    : '';
+  const message = escHtml(item.message || item.text);
+  const anim = animate
+    ? `animation:ut_bubble_${data.id} ${duration}s cubic-bezier(.2,.7,.2,1) ${delay}s forwards;`
+    : '';
+  return `<div data-ut-item="1" style="position:absolute;left:${left}%;bottom:${bottom}px;max-width:${maxWidth}%;--rise:${rise}px;padding:${Math.max(8, Math.round(10 * scale))}px ${Math.max(10, Math.round(14 * scale))}px;border-radius:${Math.max(18, Math.round(22 * scale))}px;background:linear-gradient(135deg, rgba(18,22,34,.92), rgba(48,56,88,.84));border:1px solid rgba(255,255,255,.12);box-shadow:0 ${Math.max(10, Math.round(14 * scale))}px ${Math.max(20, Math.round(28 * scale))}px rgba(0,0,0,.26);${anim}transform-origin:center bottom;backdrop-filter:blur(6px)">${roomTag}${label}<div style="font-size:${bodyFont}px;line-height:1.25;color:${escHtml(messageColor)};font-weight:700;text-shadow:0 1px 1px rgba(0,0,0,.35)">${message}</div></div>`;
+}
+
+function utilityTextChatItemHtml(item, data, scale, index, animate = true) {
+  const bodyFont = Math.max(10, Math.round((data.fontSize || 16) * scale));
+  const rowRadius = Math.max(12, Math.round(16 * scale));
+  const userSize = Math.max(9, Math.round(bodyFont * 0.62));
+  const accent = utilityItemAccent(item, data, index);
+  const messageColor = utilityItemMessageColor(item, data, index);
+  const inner = `<div style="position:relative;padding:${Math.max(9, Math.round(11 * scale))}px ${Math.max(11, Math.round(15 * scale))}px ${Math.max(10, Math.round(12 * scale))}px ${Math.max(15, Math.round(19 * scale))}px;border-radius:${rowRadius}px;background:linear-gradient(135deg, rgba(7,10,18,.92), rgba(24,30,48,.82));border:1px solid rgba(255,255,255,.12);box-shadow:0 ${Math.max(8, Math.round(12 * scale))}px ${Math.max(18, Math.round(24 * scale))}px rgba(0,0,0,.24);overflow:hidden">
+    <div style="position:absolute;left:0;top:0;bottom:0;width:${Math.max(4, Math.round(5 * scale))}px;background:${accent}"></div>
+    ${item.room ? `<div style="font-size:${Math.max(8, Math.round(bodyFont * 0.5))}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${accent};opacity:.9;padding-left:${Math.max(2, Math.round(2 * scale))}px">#${escHtml(item.room)}</div>` : ''}
+    ${item.user ? `<div style="font-size:${userSize}px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:${accent};margin-bottom:${Math.max(3, Math.round(4 * scale))}px;padding-left:${Math.max(2, Math.round(2 * scale))}px">${escHtml(item.user)}</div>` : ''}
+    <div style="font-size:${bodyFont}px;line-height:1.3;color:${escHtml(messageColor)};font-weight:700;padding-left:${Math.max(2, Math.round(2 * scale))}px">${escHtml(item.message || item.text)}</div>
+  </div>`;
+  if (!animate) return `<div data-ut-item="1">${inner}</div>`;
+  return `<div data-ut-item="1" style="animation:ut_textchat_${data.id} .28s cubic-bezier(.18,.7,.22,1) both">${inner}</div>`;
+}
+
+function clearUtilityBubbleSim(id) {
+  const sim = utilityBubbleSims.get(id);
+  if (!sim) return;
+  if (sim.raf) cancelAnimationFrame(sim.raf);
+  sim.raf = 0;
+  sim.bubbles.forEach(b => b.el?.remove());
+  sim.bubbles = [];
+  utilityBubbleSims.delete(id);
+}
+
+function ensureUtilityBubbleSim(data) {
+  const host = previewCanvas.querySelector(`.overlay-el[data-id="${data.id}"]`);
+  if (!host) return null;
+  const list = host.querySelector(`[data-ut-list="${data.id}"]`);
+  if (!list) return null;
+  const layer = list.querySelector('[data-ut-bubble-items="1"]');
+  if (!layer) return null;
+
+  const existing = utilityBubbleSims.get(data.id);
+  if (existing && existing.layer !== layer) clearUtilityBubbleSim(data.id);
+
+  let sim = utilityBubbleSims.get(data.id);
+  if (!sim) {
+    sim = { id: data.id, layer, bubbles: [], raf: 0, lastTs: 0, seed: 0 };
+    utilityBubbleSims.set(data.id, sim);
+  } else {
+    sim.layer = layer;
+  }
+
+  return sim;
+}
+
+function renderUtilityBubbleBody(item, data, scale, accent) {
+  const bodyFont = Math.max(10, Math.round((data.fontSize || 16) * scale));
+  const messageColor = utilityItemMessageColor(item, data);
+  const roomTag = item.room
+    ? `<div style="font-size:${Math.max(8, Math.round(bodyFont * 0.52))}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${accent};opacity:.9;margin-bottom:${Math.max(2, Math.round(2 * scale))}px">#${escHtml(item.room)}</div>`
+    : '';
+  const label = item.user
+    ? `<div style="font-size:${Math.max(9, Math.round(bodyFont * 0.62))}px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:${accent};margin-bottom:${Math.max(2, Math.round(2 * scale))}px">${escHtml(item.user)}</div>`
+    : '';
+  return `${roomTag}${label}<div style="font-size:${bodyFont}px;line-height:1.25;color:${escHtml(messageColor)};font-weight:700;text-shadow:0 1px 1px rgba(0,0,0,.35)">${escHtml(item.message || item.text)}</div>`;
+}
+
+function spawnUtilityBubble(sim, item, data, scale, fromHistory = false, historyIndex = 0) {
+  const bubble = document.createElement('div');
+  const accent = utilityItemAccent(item, data, sim.seed);
+  bubble.setAttribute('data-ut-item', '1');
+  bubble.style.cssText = `position:absolute;max-width:68%;padding:${Math.max(8, Math.round(10 * scale))}px ${Math.max(10, Math.round(14 * scale))}px;border-radius:${Math.max(18, Math.round(22 * scale))}px;background:linear-gradient(135deg, rgba(18,22,34,.92), rgba(48,56,88,.84));border:1px solid rgba(255,255,255,.12);box-shadow:0 ${Math.max(10, Math.round(14 * scale))}px ${Math.max(20, Math.round(28 * scale))}px rgba(0,0,0,.26);transform-origin:center bottom;backdrop-filter:blur(6px);`;
+  bubble.innerHTML = renderUtilityBubbleBody(item, data, scale, accent);
+  sim.layer.appendChild(bubble);
+
+  const w = bubble.offsetWidth || 120;
+  const h = bubble.offsetHeight || 56;
+  const r = Math.max(16, Math.max(w, h) * 0.5);
+  const layerW = Math.max(1, sim.layer.clientWidth);
+  const laneX = [10, 26, 46, 18, 60, 34][sim.seed % 6];
+  const jitter = ((sim.seed % 7) - 3) * 3;
+  let x = (layerW * (laneX + jitter) / 100);
+  x = Math.max(r, Math.min(layerW - r, x));
+
+  const y = fromHistory ? (r + historyIndex * Math.max(24, h * 0.55)) : (r - 14);
+  const vy = fromHistory ? (58 + historyIndex * 7) : (70 + ((sim.seed % 5) * 6));
+  const vx = ((sim.seed % 9) - 4) * 4;
+  sim.seed += 1;
+
+  sim.bubbles.push({ el: bubble, x, y, vx, vy, r, age: 0 });
+}
+
+function runUtilityBubbleSim(sim, data) {
+  if (sim.raf) return;
+
+  const step = ts => {
+    const current = getDataById(sim.id);
+    if (!current || current.type !== 'utility' || utilityChatStyle(current) !== 'bubble' || !document.body.contains(sim.layer)) {
+      clearUtilityBubbleSim(sim.id);
+      return;
+    }
+
+    if (!sim.lastTs) sim.lastTs = ts;
+    let dt = (ts - sim.lastTs) / 1000;
+    sim.lastTs = ts;
+    dt = Math.max(0.008, Math.min(0.04, dt));
+
+    const w = Math.max(1, sim.layer.clientWidth);
+    const h = Math.max(1, sim.layer.clientHeight);
+
+    for (let i = 0; i < sim.bubbles.length; i++) {
+      const b = sim.bubbles[i];
+      b.age += dt;
+      b.vy += 62 * dt;
+      b.vx *= 0.992;
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+
+      if (b.x < b.r) { b.x = b.r; b.vx = Math.abs(b.vx) * 0.35; }
+      if (b.x > w - b.r) { b.x = w - b.r; b.vx = -Math.abs(b.vx) * 0.35; }
+      if (b.y < b.r - 12) { b.y = b.r - 12; b.vy = Math.max(24, b.vy); }
+      const topCap = h - b.r;
+      if (b.y > topCap) {
+        b.y = topCap;
+        if (b.vy > 0) b.vy = 0;
+        b.vx *= 0.98;
+      }
+    }
+
+    for (let i = 0; i < sim.bubbles.length; i++) {
+      for (let j = i + 1; j < sim.bubbles.length; j++) {
+        const a = sim.bubbles[i];
+        const b = sim.bubbles[j];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const distSq = dx * dx + dy * dy;
+        const minD = a.r + b.r + 4;
+        if (distSq >= (minD * minD)) continue;
+
+        const dist = Math.max(0.001, Math.sqrt(distSq));
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const overlap = minD - dist;
+        const push = overlap * 0.5;
+        a.x -= nx * push;
+        a.y -= ny * push;
+        b.x += nx * push;
+        b.y += ny * push;
+
+        const rvx = b.vx - a.vx;
+        const rvy = b.vy - a.vy;
+        const sepVel = rvx * nx + rvy * ny;
+        if (sepVel < 0) {
+          const impulse = -(1.2 * sepVel) / 2;
+          a.vx -= impulse * nx;
+          a.vy -= impulse * ny;
+          b.vx += impulse * nx;
+          b.vy += impulse * ny;
+        }
+      }
+    }
+
+    const next = [];
+    for (let i = 0; i < sim.bubbles.length; i++) {
+      const b = sim.bubbles[i];
+      b.el.style.left = (b.x - b.r) + 'px';
+      b.el.style.bottom = (b.y - b.r) + 'px';
+      b.el.style.opacity = '1';
+      next.push(b);
+    }
+
+    sim.bubbles = next;
+    if (!sim.bubbles.length) {
+      sim.raf = 0;
+      sim.lastTs = 0;
+      return;
+    }
+
+    sim.raf = requestAnimationFrame(step);
+  };
+
+  sim.raf = requestAnimationFrame(step);
+}
+
+function syncUtilityBubbleSim(data) {
+  if (!data || data.type !== 'utility') return;
+  if (utilityChatStyle(data) !== 'bubble') {
+    clearUtilityBubbleSim(data.id);
+    return;
+  }
+
+  const sim = ensureUtilityBubbleSim(data);
+  if (!sim) return;
+
+  sim.layer.innerHTML = '';
+  sim.bubbles = [];
+  sim.lastTs = 0;
+
+  const items = (data.utilItems || []).slice(-Math.max(1, data.maxItems || 6)).map(normalizeUtilityItem);
+  items.forEach((item, idx) => spawnUtilityBubble(sim, item, data, zoom, true, idx));
+  if (sim.bubbles.length) runUtilityBubbleSim(sim, data);
+}
+
+function appendUtilityItemLive(data, line) {
+  const style = utilityChatStyle(data);
+  if (style === 'normal') return false;
+
+  const host = previewCanvas.querySelector(`.overlay-el[data-id="${data.id}"]`);
+  if (!host) return false;
+
+  const list = host.querySelector(`[data-ut-list="${data.id}"]`);
+  if (!list) return false;
+
+  const item = normalizeUtilityItem(line);
+  if (style === 'bubble') {
+    const sim = ensureUtilityBubbleSim(data);
+    if (!sim) return false;
+    spawnUtilityBubble(sim, item, data, zoom, false, 0);
+    while (sim.bubbles.length > Math.max(1, parseInt(data.maxItems || 6))) {
+      const old = sim.bubbles.shift();
+      old?.el?.remove();
+    }
+    runUtilityBubbleSim(sim, data);
+    const nodes = sim.layer.querySelectorAll('[data-ut-item="1"]');
+    const keep = Math.max(1, parseInt(data.maxItems || 6));
+    for (let i = 0; i < nodes.length - keep; i++) nodes[i].remove();
+    return true;
+  }
+
+  if (style === 'text-chat') {
+    const itemsWrap = list.querySelector('[data-ut-text-items="1"]');
+    if (!itemsWrap) return false;
+    itemsWrap.insertAdjacentHTML('beforeend', utilityTextChatItemHtml(item, data, zoom, Math.max(0, (data.utilItems || []).length - 1), true));
+    const nodes = itemsWrap.querySelectorAll('[data-ut-item="1"]');
+    const keep = Math.max(1, parseInt(data.maxItems || 6));
+    for (let i = 0; i < nodes.length - keep; i++) nodes[i].remove();
+    return true;
+  }
+
+  return false;
+}
+
+function renderUtilityItemsHtml(data, scale) {
+  const mode = 'chat';
+  const style = utilityChatStyle(data);
+  const items = (data.utilItems || []).slice(-Math.max(1, data.maxItems || 6)).map(normalizeUtilityItem);
+  const gap = Math.max(4, Math.round(6 * scale));
+  const bodyFont = Math.max(10, Math.round((data.fontSize || 16) * scale));
+  const waiting = escHtml(data.utilStatus || 'Waiting for Twitch data...');
+  const rowRadius = Math.max(12, Math.round(16 * scale));
+  const rowPadY = Math.max(7, Math.round(9 * scale));
+  const rowPadX = Math.max(10, Math.round(14 * scale));
+  const userSize = Math.max(9, Math.round(bodyFont * 0.62));
+
+  const renderNormalRow = (item, index) => {
+    const accent = utilityItemAccent(item, data, index);
+    const messageColor = utilityItemMessageColor(item, data, index);
+    return `<div style="padding:${rowPadY}px ${rowPadX}px;border-radius:${rowRadius}px;background:rgba(8,12,20,.62);border:1px solid rgba(255,255,255,.08);box-shadow:0 ${Math.max(6, Math.round(10 * scale))}px ${Math.max(14, Math.round(18 * scale))}px rgba(0,0,0,.18)">
+      ${item.room ? `<div style="font-size:${Math.max(8, Math.round(bodyFont * 0.5))}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${accent};opacity:.85">#${escHtml(item.room)}</div>` : ''}
+      ${item.user ? `<div style="font-size:${userSize}px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:${accent};margin-bottom:${Math.max(2, Math.round(3 * scale))}px">${escHtml(item.user)}</div>` : ''}
+      <div style="line-height:1.35;color:${escHtml(messageColor)}">${escHtml(item.message || item.text)}</div>
+    </div>`;
+  };
+
+  const renderTextChatRow = (item, index) => {
+    const accent = utilityItemAccent(item, data, index);
+    const messageColor = utilityItemMessageColor(item, data, index);
+    return `<div style="position:relative;padding:${Math.max(9, Math.round(11 * scale))}px ${Math.max(11, Math.round(15 * scale))}px ${Math.max(10, Math.round(12 * scale))}px ${Math.max(15, Math.round(19 * scale))}px;border-radius:${rowRadius}px;background:linear-gradient(135deg, rgba(7,10,18,.92), rgba(24,30,48,.82));border:1px solid rgba(255,255,255,.12);box-shadow:0 ${Math.max(8, Math.round(12 * scale))}px ${Math.max(18, Math.round(24 * scale))}px rgba(0,0,0,.24);overflow:hidden">
+      <div style="position:absolute;left:0;top:0;bottom:0;width:${Math.max(4, Math.round(5 * scale))}px;background:${accent}"></div>
+      ${item.room ? `<div style="font-size:${Math.max(8, Math.round(bodyFont * 0.5))}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${accent};opacity:.9;padding-left:${Math.max(2, Math.round(2 * scale))}px">#${escHtml(item.room)}</div>` : ''}
+      ${item.user ? `<div style="font-size:${userSize}px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:${accent};margin-bottom:${Math.max(3, Math.round(4 * scale))}px;padding-left:${Math.max(2, Math.round(2 * scale))}px">${escHtml(item.user)}</div>` : ''}
+      <div style="font-size:${bodyFont}px;line-height:1.3;color:${escHtml(messageColor)};font-weight:700;padding-left:${Math.max(2, Math.round(2 * scale))}px">${escHtml(item.message || item.text)}</div>
+    </div>`;
+  };
+
+  if (!items.length) {
+    return `<div data-ut-empty="1" style="opacity:.7;display:flex;align-items:center;justify-content:center;height:100%;min-height:0">${waiting}</div>`;
+  }
+
+  if (style === 'bubble') {
+    return `<div style="position:relative;height:100%;min-height:0;overflow:hidden">
+      <div data-ut-bubble-items="1" style="position:absolute;inset:0">
+        ${items.map((item, index) => utilityBubbleItemHtml(item, data, scale, index, items.length, false)).join('')}
+      </div>
+    </div>`;
+  }
+
+  if (style === 'text-chat') {
+    const animName = `ut_textchat_${data.id}`;
+    return `<div style="display:flex;flex-direction:column;gap:${gap}px;overflow:hidden;height:100%;min-height:0;justify-content:flex-end">
+      <style>
+        @keyframes ${animName} {
+          0% { transform:translate3d(0, 22%, 0); opacity:0; }
+          100% { transform:translate3d(0, 0, 0); opacity:1; }
+        }
+      </style>
+      <div data-ut-text-items="1" style="display:flex;flex-direction:column;gap:${gap}px;overflow:hidden;height:100%;min-height:0;justify-content:flex-end">
+        ${items.map((item, index) => utilityTextChatItemHtml(item, data, scale, index, true)).join('')}
+      </div>
+    </div>`;
+  }
+
+  return `<div style="display:flex;flex-direction:column;gap:${gap}px;overflow:hidden;height:100%;min-height:0;justify-content:flex-end">
+    ${items.map((item, index) => renderNormalRow(item, index)).join('')}
+  </div>`;
+}
+
+function renderUtilityWidget(data, scale) {
+  data.utilMode = 'chat';
+  const mode = 'chat';
+  const title = `Twitch ${escHtml(mode.toUpperCase())}`;
+  const statusSuffix = ` ${data.utilConnected ? '• connected' : '• offline'}`;
+  const reactionOverlay = renderUtilityReactionHtml(data, scale);
+  return `<div style="width:100%;height:100%;padding:${Math.max(4, Math.round(6 * scale))}px;background:${data.bgColor};border-radius:${data.borderRadius}px;overflow:hidden;display:flex;flex-direction:column;gap:${Math.max(3, Math.round(4 * scale))}px">
+    <div style="font-size:${Math.max(10, Math.round((data.fontSize || 16) * scale * 0.85))}px;opacity:.8;font-family:${data.fontFamily};color:${data.color};font-weight:700;letter-spacing:.04em">
+      ${title}${statusSuffix}
+    </div>
+    <div data-ut-list="${data.id}" style="font-size:${Math.max(10, Math.round((data.fontSize || 16) * scale))}px;font-family:${data.fontFamily};color:${data.color};overflow:hidden;flex:1;min-height:0;position:relative">
+      ${renderUtilityItemsHtml(data, scale)}
+    </div>
+    ${reactionOverlay}
+  </div>`;
+}
+
+function connectTwitch() {
+  const data = getDataById(selectedId);
+  if (!data || data.type !== 'utility') return;
+  data.utilMode = 'chat';
+
+  if (twitchState.ws) {
+    try { twitchState.ws.close(); } catch {}
+    twitchState.ws = null;
+  }
+  twitchState.connected = false;
+
+  const streamMap = utilityStreamMap(data);
+  let channels = [...streamMap.keys()];
+  if (!channels.length) {
+    data.utilStatus = 'Add at least one streamer channel';
+    data.utilConnected = false;
+    refreshElement(data.id);
+    return;
+  }
+
+  const typedUser = String(data.username || '').trim();
+  const typedToken = normalizeOauthToken(data.oauthToken);
+  const anonNick = `justinfan${Math.floor(10000 + Math.random() * 89999)}`;
+  const isAnon = !(typedUser && typedToken);
+  const username = isAnon ? anonNick : typedUser;
+  const token = isAnon ? 'SCHMOOPIIE' : typedToken;
+  twitchState.isAnon = isAnon;
+
+  const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
+  twitchState.ws = ws;
+  twitchState.channel = channels[0] || '';
+  twitchState.username = username;
+  twitchState.token = token;
+
+  setUtilityStatusByChannels(channels, isAnon ? 'Connecting to Twitch (anonymous)...' : 'Connecting to Twitch...', false);
+
+  ws.onopen = () => {
+    ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
+    ws.send(`PASS ${token}`);
+    ws.send(`NICK ${username}`);
+    channels.forEach(channel => ws.send(`JOIN #${channel}`));
+    twitchState.connected = true;
+    const statusText = isAnon
+      ? `Connected anonymously to ${channels.map(ch => `#${ch}`).join(', ')}`
+      : `Connected to ${channels.map(ch => `#${ch}`).join(', ')}`;
+    setUtilityStatusByChannels(channels, statusText, true);
+  };
+
+  ws.onmessage = e => {
+    const lines = String(e.data || '').split('\r\n').filter(Boolean);
+    lines.forEach(raw => {
+      if (raw.startsWith('PING')) {
+        ws.send(raw.replace('PING', 'PONG'));
+        return;
+      }
+
+      let tagPart = '';
+      let core = raw;
+      if (raw.startsWith('@')) {
+        const firstSpace = raw.indexOf(' ');
+        if (firstSpace > 1) {
+          tagPart = raw.slice(1, firstSpace);
+          core = raw.slice(firstSpace + 1);
+        }
+      }
+
+      const priv = core.match(/^:([^!]+)![^ ]+ PRIVMSG #([^ ]+) :([\s\S]*)$/);
+      if (priv) {
+        const tags = parseTwitchTags(tagPart);
+        const user = priv[1];
+        const room = priv[2].toLowerCase();
+        const msg = priv[3];
+        elements.forEach(d => {
+          if (d.type !== 'utility') return;
+          const dStream = utilityStreamMap(d).get(room);
+          if (!dStream) return;
+          const chatterColor = normalizeUtilityColor(tags.color || '');
+          const customColor = !!d.utilCustomColors ? dStream.color : '';
+          pushUtilityItem(d, { kind: 'chat', room, color: customColor, chatterColor, user, message: msg, text: `${user}: ${msg}` });
+          const cmd = findUtilityCommandMatch(d, msg);
+          if (cmd) {
+            executeUtilityChatControl(d, cmd, { room, user, message: msg, ws });
+          }
+        });
+        return;
+      }
+
+      return;
+    });
+  };
+
+  ws.onerror = () => {
+    twitchState.connected = false;
+    setUtilityStatusByChannels(channels, 'Twitch connection error', false);
+  };
+
+  ws.onclose = () => {
+    twitchState.connected = false;
+    setUtilityStatusByChannels(channels, 'Disconnected', false);
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DEFAULT DATA PER TYPE
+// ═══════════════════════════════════════════════════════════
+function defaultData(type) {
+  const base = {
+    id: nextId++, type,
+    x: 40, y: 40, w: 300, h: 60,
+    visible: true, opacity: 1, zIndex: elements.length + 1,
+    name: type.charAt(0).toUpperCase() + type.slice(1) + ' ' + (nextId - 1),
+  };
+  switch (type) {
+    case 'text':
+      return { ...base, w: 320, h: 60,
+        text: 'Stream Title', fontSize: 36, fontFamily: 'Arial',
+        color: '#ffffff', bgColor: '', bold: false, italic: false,
+        shadow: true, shadowColor: '#000000', outline: false, outlineColor: '#000000',
+        align: 'left', borderRadius: 0, padding: 6,
+        animate: false, animType: 'float', floatDirection: 'up-down', animSpeed: 4 };
+    case 'clock':
+      return { ...base, w: 260, h: 56,
+        fontSize: 36, fontFamily: 'monospace', color: '#ffffff',
+        bgColor: '', bold: true, shadow: true, shadowColor: '#000000',
+        format24: true, showSeconds: true, showDate: false };
+    case 'countdown':
+      return { ...base, w: 280, h: 70,
+        label: 'Starting in', targetTimestamp: Date.now() + 10 * 60000,
+        fontSize: 38, fontFamily: 'monospace', color: '#ffdd57',
+        bgColor: '', bold: true, shadow: true, shadowColor: '#000000' };
+    case 'image':
+      return { ...base, w: 200, h: 200, src: '', objectFit: 'contain',
+        animate: false, animType: 'float', floatDirection: 'up-down', animSpeed: 4 };
+    case 'progress':
+      return { ...base, w: 340, h: 52,
+        label: 'Donation Goal', value: 60, max: 100,
+        showLabel: true, showPercent: true,
+        barColor: '#a78bfa', bgColor: 'rgba(0,0,0,0.5)',
+        trackColor: 'rgba(255,255,255,0.15)',
+        fontSize: 14, color: '#ffffff', borderRadius: 6 };
+    case 'ticker':
+      return { ...base, w: 600, h: 48,
+        messages: ['Welcome to the stream!', 'Follow for more!', 'Use !commands for help'],
+        separator: '   ✦   ',
+        fontSize: 22, fontFamily: 'Arial', color: '#ffffff',
+        bgColor: 'rgba(0,0,0,0.6)', speed: 18, borderRadius: 4 };
+    case 'box':
+      return { ...base, w: 240, h: 80,
+        bgColor: 'rgba(122,85,191,0.35)',
+        borderColor: '#a78bfa', borderWidth: 2,
+        borderRadius: 8, fillTransparent: false, opacity: 1 };
+    case 'utility':
+      return { ...base, w: 420, h: 180,
+        utilMode: 'chat', channel: '', username: '', oauthToken: '',
+        utilStreams: [{ channel: '', color: '#a78bfa' }],
+        utilCustomColors: false,
+        utilStyle: 'normal',
+        utilControlsEnabled: false,
+        utilCommandsText: [
+          '!hi|show-text|Hello {user}!|4|',
+          '!logo|display-image|https://placehold.co/320x120/png|5|',
+          '!news|scroll-text|Welcome to the stream, {user}!|8|',
+          '!discord|chat-message|Join us: https://discord.gg/example|0|',
+        ].join('\n'),
+        utilConnected: false, utilStatus: 'Not connected',
+        utilReaction: null,
+        utilItems: [], maxItems: 6,
+        fontSize: 16, fontFamily: 'Arial', color: '#ffffff',
+        bgColor: 'rgba(0,0,0,0.65)', borderRadius: 8 };
+    default: return base;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RENDER ELEMENT INNER HTML
+// ═══════════════════════════════════════════════════════════
+function renderInner(data) {
+  switch (data.type) {
+    case 'text': {
+      const style = [
+        `font-size:${data.fontSize * zoom}px`,
+        `font-family:${data.fontFamily}`,
+        `color:${data.color}`,
+        data.bold   ? 'font-weight:bold'   : '',
+        data.italic ? 'font-style:italic'  : '',
+        `text-align:${data.align}`,
+        `padding:${data.padding * zoom}px`,
+        `border-radius:${data.borderRadius}px`,
+        data.bgColor ? `background:${data.bgColor}` : '',
+        data.shadow  ? `text-shadow:1px 1px 4px ${data.shadowColor}` : '',
+        data.outline ? `-webkit-text-stroke:1px ${data.outlineColor}` : '',
+        'width:100%','height:100%','display:flex','align-items:center',
+      ].filter(Boolean).join(';');
+      return `<div class="w-text" style="${style}">${escHtml(data.text)}</div>`;
+    }
+    case 'clock': {
+      const style = [
+        `font-size:${data.fontSize * zoom}px`,
+        `font-family:${data.fontFamily}`,
+        `color:${data.color}`,
+        data.bold   ? 'font-weight:bold'  : '',
+        data.bgColor ? `background:${data.bgColor}` : '',
+        data.shadow  ? `text-shadow:1px 1px 4px ${data.shadowColor}` : '',
+        'width:100%','height:100%','display:flex','align-items:center','justify-content:center',
+      ].filter(Boolean).join(';');
+      return `<div class="w-clock" data-id="${data.id}" style="${style}">00:00:00</div>`;
+    }
+    case 'countdown': {
+      const style = [
+        `font-size:${data.fontSize * zoom}px`,
+        `font-family:${data.fontFamily}`,
+        `color:${data.color}`,
+        data.bold ? 'font-weight:bold' : '',
+        data.bgColor ? `background:${data.bgColor}` : '',
+        data.shadow  ? `text-shadow:1px 1px 4px ${data.shadowColor}` : '',
+        'width:100%','height:100%','display:flex','align-items:center','justify-content:center','flex-direction:column',
+      ].filter(Boolean).join(';');
+      return `<div class="w-countdown" data-id="${data.id}" style="${style}">
+        ${data.label ? `<div style="font-size:${data.fontSize * zoom * 0.45}px;opacity:.7">${escHtml(data.label)}</div>` : ''}
+        <div class="cd-display">00:00:00</div>
+      </div>`;
+    }
+    case 'image': {
+      if (!data.src) {
+        return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+          border:2px dashed var(--border);color:var(--text-muted);font-size:${12*zoom}px;border-radius:4px">
+          🖼 Click to upload image</div>`;
+      }
+      return `<img class="w-image" src="${data.src}" style="object-fit:${data.objectFit};width:100%;height:100%;" alt="" />`;
+    }
+    case 'progress': {
+      const pct = Math.min(100, Math.max(0, (data.value / data.max) * 100));
+      return `<div class="w-progress" style="width:100%;height:100%;padding:4px;background:${data.bgColor};border-radius:${data.borderRadius}px">
+        ${data.showLabel ? `<div class="prog-label" style="font-size:${data.fontSize*zoom}px;color:${data.color}">
+          ${escHtml(data.label)}${data.showPercent ? ' — ' + Math.round(pct) + '%' : ''}</div>` : ''}
+        <div class="prog-track" style="background:${data.trackColor};border-radius:${data.borderRadius}px">
+          <div class="prog-fill" style="width:${pct}%;background:${data.barColor};height:100%;border-radius:${data.borderRadius}px"></div>
+        </div>
+      </div>`;
+    }
+    case 'ticker': {
+      const msgs = data.messages.map(m => escHtml(m)).join(escHtml(data.separator));
+      const doubled = msgs + escHtml(data.separator) + msgs;
+      const dur = data.speed;
+      return `<div class="w-ticker" style="width:100%;height:100%;background:${data.bgColor};
+          border-radius:${data.borderRadius}px;overflow:hidden">
+        <div class="ticker-inner" style="font-size:${data.fontSize*zoom}px;font-family:${data.fontFamily};
+          color:${data.color};animation-duration:${dur}s">${doubled}</div>
+      </div>`;
+    }
+    case 'box':
+      return `<div style="width:100%;height:100%;background:${data.fillTransparent ? 'transparent' : data.bgColor};
+        border:${data.borderWidth}px solid ${data.borderColor};border-radius:${data.borderRadius}px"></div>`;
+    case 'utility': {
+      return renderUtilityWidget(data, zoom);
+    }
+  }
+}
+
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Build image widget DOM directly
+function renderImageElement(el, data) {
+  // Clear all existing inner content first (except resize-handle and delete-btn)
+  [...el.childNodes].forEach(k => {
+    if (!k.classList?.contains('resize-handle') && !k.classList?.contains('delete-btn')) el.removeChild(k);
+  });
+
+  if (data.src) {
+    const img = document.createElement('img');
+    img.src = data.src;
+    img.style.cssText = `object-fit:${data.objectFit};width:100%;height:100%;display:block;border-radius:4px;`;
+    el.insertBefore(img, el.firstChild);
+  } else {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;align-items:center;' +
+      'justify-content:center;gap:6px;border:2px dashed #2e3350;color:#8892b0;border-radius:4px;box-sizing:border-box;';
+    wrap.innerHTML = `<span style="font-size:22px">🖼</span>` +
+      `<span style="font-size:11px">Upload in the panel →</span>`;
+    wrap.addEventListener('mousedown', e => e.stopPropagation());
+    el.insertBefore(wrap, el.firstChild);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CREATE DOM ELEMENT
+// ═══════════════════════════════════════════════════════════
+function createElement(data) {
+  const el = document.createElement('div');
+  el.className = 'overlay-el';
+  el.dataset.id = data.id;
+  el.style.left    = (data.x * zoom) + 'px';
+  el.style.top     = (data.y * zoom) + 'px';
+  el.style.width   = (data.w * zoom) + 'px';
+  el.style.height  = (data.h * zoom) + 'px';
+  el.style.zIndex  = data.zIndex;
+  el.style.opacity = data.opacity;
+  el.style.display = data.visible ? '' : 'none';
+  applyWrapperAnimation(el, data);
+  if (data.type === 'image') {
+    renderImageElement(el, data);
+  } else {
+    el.innerHTML = renderInner(data);
+  }
+  if (data.type === 'utility') {
+    syncUtilityBubbleSim(data);
+  }
+
+  // Resize handle
+  const rh = document.createElement('div');
+  rh.className = 'resize-handle';
+  el.appendChild(rh);
+
+  // Delete button
+  const db = document.createElement('div');
+  db.className = 'delete-btn';
+  db.textContent = '×';
+  db.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    deleteElement(data.id);
+  });
+  el.appendChild(db);
+
+  // Click to select
+  el.addEventListener('mousedown', e => {
+    if (e.target.classList.contains('resize-handle')) return;
+    if (e.target.classList.contains('delete-btn'))    return;
+    if (e.target.tagName === 'INPUT' && e.target.type === 'file') return; // let file input handle itself
+    selectElement(data.id);
+    startDrag(e, el, data);
+  });
+
+  // Resize drag
+  rh.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    selectElement(data.id);
+    startResize(e, el, data);
+  });
+
+  previewCanvas.appendChild(el);
+  return el;
+}
+
+function refreshElement(id) {
+  const data = getDataById(id);
+  if (!data) return;
+  const el = previewCanvas.querySelector(`[data-id="${id}"]`);
+  if (!el) return;
+  // Remove inner children (keep resize-handle and delete-btn)
+  const kids = [...el.childNodes];
+  kids.forEach(k => {
+    if (!k.classList?.contains('resize-handle') && !k.classList?.contains('delete-btn')) el.removeChild(k);
+  });
+  if (data.type === 'image') {
+    renderImageElement(el, data);
+  } else {
+    el.insertAdjacentHTML('afterbegin', renderInner(data));
+  }
+  el.style.left    = (data.x * zoom) + 'px';
+  el.style.top     = (data.y * zoom) + 'px';
+  el.style.width   = (data.w * zoom) + 'px';
+  el.style.height  = (data.h * zoom) + 'px';
+  el.style.zIndex  = data.zIndex;
+  el.style.opacity = data.opacity;
+  el.style.display = data.visible ? '' : 'none';
+  applyWrapperAnimation(el, data);
+
+  if (data.type === 'utility') {
+    syncUtilityBubbleSim(data);
+  }
+
+  renderLayersPanel();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DRAG & RESIZE
+// ═══════════════════════════════════════════════════════════
+function startDrag(e, el, data) {
+  e.preventDefault();
+  const startX = e.clientX, startY = e.clientY;
+  const ox = data.x, oy = data.y;
+  showTransformHud(data, 'Drag');
+  function onMove(ev) {
+    const dx = (ev.clientX - startX) / zoom;
+    const dy = (ev.clientY - startY) / zoom;
+    data.x = Math.max(0, Math.round(ox + dx));
+    data.y = Math.max(0, Math.round(oy + dy));
+    el.style.left = (data.x * zoom) + 'px';
+    el.style.top  = (data.y * zoom) + 'px';
+    syncPositionProps(data);
+    showTransformHud(data, 'Drag');
+  }
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup',   onUp);
+    hideTransformHud();
+  }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup',   onUp);
+}
+
+function startResize(e, el, data) {
+  e.preventDefault();
+  const startX = e.clientX, startY = e.clientY;
+  const ow = data.w, oh = data.h;
+  showTransformHud(data, 'Resize');
+  function onMove(ev) {
+    const dx = (ev.clientX - startX) / zoom;
+    const dy = (ev.clientY - startY) / zoom;
+    data.w = Math.max(20, Math.round(ow + dx));
+    data.h = Math.max(20, Math.round(oh + dy));
+    el.style.width  = (data.w * zoom) + 'px';
+    el.style.height = (data.h * zoom) + 'px';
+    refreshElement(data.id);
+    syncPositionProps(data);
+    showTransformHud(data, 'Resize');
+  }
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup',   onUp);
+    hideTransformHud();
+  }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup',   onUp);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SELECTION
+// ═══════════════════════════════════════════════════════════
+function selectElement(id) {
+  selectedId = id;
+  selectedGroupId = null;
+  selectedIds.clear();
+  document.querySelectorAll('.overlay-el').forEach(el => el.classList.remove('selected'));
+  const el = previewCanvas.querySelector(`[data-id="${id}"]`);
+  if (el) el.classList.add('selected');
+  renderPropsPanel();
+  renderLayersPanel();
+}
+
+function deselectAll() {
+  selectedId = null;
+  selectedGroupId = null;
+  selectedIds.clear();
+  document.querySelectorAll('.overlay-el').forEach(el => el.classList.remove('selected'));
+  document.getElementById('props-panel').innerHTML = '<div class="props-empty">Select a widget to edit its properties.</div>';
+  renderLayersPanel();
+}
+
+previewCanvas.addEventListener('mousedown', e => {
+  if (e.target === previewCanvas) deselectAll();
+});
+
+// ═══════════════════════════════════════════════════════════
+//  DELETE
+// ═══════════════════════════════════════════════════════════
+function deleteElement(id) {
+  const data = getDataById(id);
+  const gid = data?.groupId;
+  clearUtilityBubbleSim(id);
+  elements = elements.filter(e => e.id !== id);
+  const el = previewCanvas.querySelector(`[data-id="${id}"]`);
+  if (el) el.remove();
+  if (gid) {
+    const remaining = elements.filter(d => d.groupId === gid);
+    if (!remaining.length) {
+      groups = groups.filter(g => g.id !== gid);
+      if (selectedGroupId === gid) selectedGroupId = null;
+    }
+  }
+  if (selectedId === id) deselectAll();
+  else renderLayersPanel();
+}
+
+document.addEventListener('keydown', e => {
+  const ael = document.activeElement;
+  const inInput = ael && (ael.tagName === 'INPUT' || ael.tagName === 'TEXTAREA' || ael.tagName === 'SELECT');
+
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId !== null) {
+    if (inInput) return;
+    deleteElement(selectedId);
+    return;
+  }
+
+  // Ctrl+C — copy selected widget
+  if (e.key === 'c' && (e.ctrlKey || e.metaKey) && selectedId !== null) {
+    if (inInput) return;
+    const src = getDataById(selectedId);
+    if (src) {
+      clipboardWidget = JSON.parse(JSON.stringify(src));
+      showSnack('Widget copied');
+    }
+    return;
+  }
+
+  // Ctrl+V — paste copied widget
+  if (e.key === 'v' && (e.ctrlKey || e.metaKey) && clipboardWidget !== null) {
+    if (inInput) return;
+    const copy = JSON.parse(JSON.stringify(clipboardWidget));
+    copy.id = nextId++;
+    copy.name = copy.name + ' Copy';
+    copy.x = copy.x + 20;
+    copy.y = copy.y + 20;
+    copy.zIndex = elements.length + 1;
+    copy.groupId = null;  // pasted copy is not part of any group
+    // Reset live runtime state for utility widgets
+    if (copy.type === 'utility') {
+      copy.utilItems = [];
+      copy.utilConnected = false;
+      copy.utilStatus = 'Not connected';
+    }
+    elements.push(copy);
+    createElement(copy);
+    selectElement(copy.id);
+    renderLayersPanel();
+    return;
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+//  ADD WIDGET
+// ═══════════════════════════════════════════════════════════
+document.querySelectorAll('.widget-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const data = defaultData(btn.dataset.type);
+    // stagger placement
+    data.x = 40 + (elements.length % 6) * 30;
+    data.y = 40 + (elements.length % 6) * 30;
+    elements.push(data);
+    createElement(data);
+    selectElement(data.id);
+    renderLayersPanel();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+//  LAYERS PANEL
+// ═══════════════════════════════════════════════════════════
+const ICONS = { text:'T', clock:'🕐', countdown:'⏳', image:'🖼', progress:'📊', ticker:'📰', box:'▭', utility:'🧰' };
+
+function renderLayersPanel() {
+  const panel = document.getElementById('layers-panel');
+  if (!panel) return;
+  const rows = buildLayerRows();
+  const selCount = selectedIds.size;
+
+  let html = `<div class="layers-toolbar">`;
+  if (selCount >= 2) {
+    html += `<button class="btn btn-secondary" id="btn-do-group" style="padding:3px 9px;font-size:.72rem">📁 Group (${selCount})</button>`;
+  } else {
+    html += `<span style="font-size:.68rem;color:var(--text-muted)">${selCount === 1 ? '1 selected — pick more' : 'Check boxes to group'}</span>`;
+  }
+  html += `</div>`;
+
+  if (!rows.length) {
+    html += `<div style="padding:10px 14px;color:var(--text-muted);font-size:.78rem">No widgets yet</div>`;
+    panel.innerHTML = html;
+    document.getElementById('btn-do-group')?.addEventListener('click', groupSelected);
+    return;
+  }
+
+  rows.forEach(row => {
+    if (row.type === 'element') {
+      const d = row.data;
+      const isSel = d.id === selectedId;
+      const isChk = selectedIds.has(d.id);
+      html += `<div class="layer-item${isSel ? ' selected' : ''}" data-lid="${d.id}" draggable="true">
+        <input type="checkbox" class="layer-check" data-chk="${d.id}" ${isChk ? 'checked' : ''} title="Select for grouping" />
+        <span class="layer-drag-handle" title="Drag to reorder">⠿</span>
+        <span class="layer-icon">${ICONS[d.type] || '■'}</span>
+        <span class="layer-name">${escHtml(d.name)}</span>
+        ${d.animate && !d.groupId ? '<span style="font-size:.75rem" title="Animated">🎬</span>' : ''}
+        <span class="layer-vis" data-vis="${d.id}" title="Toggle visibility">${d.visible ? '👁' : '🙈'}</span>
+      </div>`;
+    } else if (row.type === 'group') {
+      const { grp, members } = row;
+      const isSel = grp.id === selectedGroupId;
+      const col = grp.collapsed;
+      html += `<div data-gblock="${grp.id}">
+        <div class="layer-group-header${isSel ? ' group-selected' : ''}" data-ghdr="${grp.id}">
+          <span data-gcollapse="${grp.id}" style="cursor:pointer;font-size:.65rem;flex-shrink:0">${col ? '►' : '▼'}</span>
+          <span>📁</span>
+          <span class="layer-name">${escHtml(grp.name)}</span>
+          ${grp.animate ? '<span style="font-size:.75rem" title="Animated">🎬</span>' : ''}
+          <button class="layer-group-ungroup" data-ungrp="${grp.id}" title="Ungroup">⛓</button>
+          <span class="layer-vis" data-gvis="${grp.id}" title="Toggle group visibility">👁</span>
+        </div>`;
+      if (!col) {
+        html += `<div class="layer-group-body">`;
+        members.forEach(d => {
+          const isMemberSel = d.id === selectedId;
+          const isChk = selectedIds.has(d.id);
+          html += `<div class="layer-item${isMemberSel ? ' selected' : ''}" data-lid="${d.id}" data-ingid="${grp.id}" draggable="true">
+            <input type="checkbox" class="layer-check" data-chk="${d.id}" ${isChk ? 'checked' : ''} title="Select for grouping" />
+            <span class="layer-drag-handle">⠿</span>
+            <span class="layer-icon">${ICONS[d.type] || '■'}</span>
+            <span class="layer-name">${escHtml(d.name)}</span>
+            <span class="layer-vis" data-vis="${d.id}">${d.visible ? '👁' : '🙈'}</span>
+          </div>`;
+        });
+        html += `</div>`;
+      }
+      html += `</div>`;
+    }
+  });
+
+  panel.innerHTML = html;
+
+  // ── Bind toolbar ──
+  document.getElementById('btn-do-group')?.addEventListener('click', groupSelected);
+
+  // ── Checkboxes ──
+  panel.querySelectorAll('.layer-check').forEach(chk => {
+    chk.addEventListener('change', e => {
+      e.stopPropagation();
+      const id = parseInt(chk.dataset.chk);
+      if (chk.checked) selectedIds.add(id); else selectedIds.delete(id);
+      const tb = panel.querySelector('.layers-toolbar');
+      if (tb) {
+        const cnt = selectedIds.size;
+        if (cnt >= 2) {
+          tb.innerHTML = `<button class="btn btn-secondary" id="btn-do-group" style="padding:3px 9px;font-size:.72rem">📁 Group (${cnt})</button>`;
+          document.getElementById('btn-do-group')?.addEventListener('click', groupSelected);
+        } else {
+          tb.innerHTML = `<span style="font-size:.68rem;color:var(--text-muted)">${cnt === 1 ? '1 selected — pick more' : 'Check boxes to group'}</span>`;
+        }
+      }
+    });
+  });
+
+  // ── Layer item click + drag ──
+  let dragSrcId = null;
+  panel.querySelectorAll('.layer-item').forEach(li => {
+    li.addEventListener('mousedown', e => {
+      if (e.target.classList.contains('layer-check')) return;
+      if (e.target.dataset.vis) return;
+      if (e.target.classList.contains('layer-drag-handle')) return;
+      selectElement(parseInt(li.dataset.lid));
+    });
+
+    li.addEventListener('dragstart', e => {
+      dragSrcId = parseInt(li.dataset.lid);
+      e.dataTransfer.effectAllowed = 'move';
+      requestAnimationFrame(() => li.classList.add('dragging'));
+    });
+    li.addEventListener('dragend', () => {
+      li.classList.remove('dragging');
+      panel.querySelectorAll('.drag-over').forEach(i => i.classList.remove('drag-over'));
+      dragSrcId = null;
+    });
+    li.addEventListener('dragover', e => {
+      e.preventDefault();
+      panel.querySelectorAll('.drag-over').forEach(i => i.classList.remove('drag-over'));
+      if (dragSrcId !== parseInt(li.dataset.lid)) li.classList.add('drag-over');
+    });
+    li.addEventListener('dragleave', () => li.classList.remove('drag-over'));
+    li.addEventListener('drop', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const targetId = parseInt(li.dataset.lid);
+      if (!dragSrcId || dragSrcId === targetId) return;
+      const allItems = [...panel.querySelectorAll('.layer-item')].map(i => parseInt(i.dataset.lid));
+      const srcIdx = allItems.indexOf(dragSrcId);
+      const tgtIdx = allItems.indexOf(targetId);
+      if (srcIdx === -1 || tgtIdx === -1) return;
+      allItems.splice(srcIdx, 1);
+      allItems.splice(tgtIdx, 0, dragSrcId);
+      const newOrder = [...allItems].reverse();
+      newOrder.forEach((id, idx) => { const d = getDataById(id); if (d) d.zIndex = idx + 1; });
+      elements.sort((a, b) => a.zIndex - b.zIndex);
+      elements.forEach(d => {
+        const domEl = previewCanvas.querySelector(`[data-id="${d.id}"]`);
+        if (domEl) domEl.style.zIndex = d.zIndex;
+      });
+      renderLayersPanel();
+    });
+  });
+
+  // ── Group header click ──
+  panel.querySelectorAll('[data-ghdr]').forEach(hdr => {
+    hdr.addEventListener('mousedown', e => {
+      if (e.target.dataset.gvis) return;
+      if (e.target.dataset.ungrp || e.target.classList.contains('layer-group-ungroup')) return;
+      if (e.target.dataset.gcollapse) {
+        const gid = parseInt(e.target.dataset.gcollapse);
+        const g = getGroupById(gid);
+        if (g) { g.collapsed = !g.collapsed; renderLayersPanel(); }
+        return;
+      }
+      const gid = parseInt(hdr.dataset.ghdr);
+      const grp = getGroupById(gid);
+      if (!grp) return;
+      selectedId = null;
+      selectedGroupId = gid;
+      selectedIds.clear();
+      document.querySelectorAll('.overlay-el').forEach(el => el.classList.remove('selected'));
+      renderLayersPanel();
+      renderPropsPanel();
+    });
+  });
+
+  // ── Ungroup ──
+  panel.querySelectorAll('[data-ungrp]').forEach(btn => {
+    btn.addEventListener('mousedown', e => {
+      e.stopPropagation();
+      ungroupGroup(parseInt(btn.dataset.ungrp));
+    });
+  });
+
+  // ── Visibility toggles ──
+  panel.querySelectorAll('[data-vis]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const d = getDataById(parseInt(btn.dataset.vis));
+      if (!d) return;
+      d.visible = !d.visible;
+      refreshElement(d.id);
+    });
+  });
+
+  // ── Group visibility toggles ──
+  panel.querySelectorAll('[data-gvis]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const gid = parseInt(btn.dataset.gvis);
+      const members = elements.filter(d => d.groupId === gid);
+      if (!members.length) return;
+      const anyVisible = members.some(d => d.visible);
+      members.forEach(d => { d.visible = !anyVisible; refreshElement(d.id); });
+    });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  GROUP PROPERTIES PANEL
+// ═══════════════════════════════════════════════════════════
+function renderGroupPropsPanel(grp) {
+  const panel = document.getElementById('props-panel');
+  const dirOptions = [
+    ['up-down', 'Up / Down'],
+    ['left-right', 'Left / Right'],
+    ['diag-up-right', 'Diagonal Up-Right'],
+    ['diag-down-right', 'Diagonal Down-Right'],
+  ];
+  const memberNames = elements.filter(d => d.groupId === grp.id).map(d => escHtml(d.name));
+  panel.innerHTML = `
+  <div class="prop-group">
+    <div class="prop-group-title">Group</div>
+    <div class="prop-row"><label>Name</label><input id="grp-name" type="text" value="${escHtml(grp.name)}" /></div>
+    <div class="prop-row" style="align-items:flex-start"><label>Members</label>
+      <span style="font-size:.72rem;color:var(--text-muted);flex:1">${memberNames.join(', ') || '—'}</span>
+    </div>
+  </div>
+  <div class="prop-group">
+    <div class="prop-group-title">Shared Animation</div>
+    <div class="prop-row"><label>Animate</label><input id="grp-animate" type="checkbox" ${grp.animate ? 'checked' : ''} /></div>
+    ${grp.animate ? `
+    <div class="prop-row"><label>Animation</label>
+      <select id="grp-anim-type">
+        <option value="float" selected>Float</option>
+      </select>
+    </div>
+    <div class="prop-row"><label>Direction</label>
+      <select id="grp-float-dir">
+        ${dirOptions.map(([v, l]) => `<option value="${v}"${grp.floatDirection === v ? ' selected' : ''}>${l}</option>`).join('')}
+      </select>
+    </div>
+    <div class="prop-row"><label>Speed (s)</label><input id="grp-anim-speed" type="number" value="${grp.animSpeed || 4}" min="0.2" max="30" step="0.1" /></div>
+    ` : ''}
+  </div>
+  <div class="prop-group">
+    <button class="btn btn-secondary" id="grp-ungroup-btn" style="width:100%">⛓ Ungroup</button>
+  </div>`;
+  bindGroupPropsEvents(grp);
+}
+
+function bindGroupPropsEvents(grp) {
+  const bindG = (id, prop, transform) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const isSelect = el.tagName === 'SELECT';
+    const ev = (el.type === 'checkbox' || isSelect) ? 'change' : 'input';
+    el.addEventListener(ev, () => {
+      grp[prop] = el.type === 'checkbox' ? el.checked : (transform ? transform(el.value) : el.value);
+      refreshGroupMembers(grp.id);
+      renderLayersPanel();
+    });
+  };
+  const num = v => parseFloat(v);
+
+  bindG('grp-name', 'name');
+  bindG('grp-anim-type', 'animType');
+  bindG('grp-float-dir', 'floatDirection');
+  bindG('grp-anim-speed', 'animSpeed', num);
+
+  const animToggle = document.getElementById('grp-animate');
+  if (animToggle) {
+    animToggle.addEventListener('change', () => {
+      grp.animate = animToggle.checked;
+      refreshGroupMembers(grp.id);
+      renderGroupPropsPanel(grp);
+      renderLayersPanel();
+    });
+  }
+  document.getElementById('grp-ungroup-btn')?.addEventListener('click', () => ungroupGroup(grp.id));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PROPERTIES PANEL
+// ═══════════════════════════════════════════════════════════
+function syncPositionProps(data) {
+  const xInput = document.getElementById('prop-x');
+  const yInput = document.getElementById('prop-y');
+  const wInput = document.getElementById('prop-w');
+  const hInput = document.getElementById('prop-h');
+  if (xInput) xInput.value = data.x;
+  if (yInput) yInput.value = data.y;
+  if (wInput) wInput.value = data.w;
+  if (hInput) hInput.value = data.h;
+}
+
+function renderPropsPanel() {
+  const panel = document.getElementById('props-panel');
+  if (selectedGroupId !== null) {
+    const grp = getGroupById(selectedGroupId);
+    if (grp) { renderGroupPropsPanel(grp); return; }
+    selectedGroupId = null;
+  }
+  const data  = getDataById(selectedId);
+  if (!data) { panel.innerHTML = '<div class="props-empty">Select a widget to edit its properties.</div>'; return; }
+
+  // Group membership note helper
+  const grpNote = (() => {
+    if (!data.groupId) return '';
+    const g = getGroupById(data.groupId);
+    return g ? `<div class="prop-row"><span style="font-size:.7rem;color:var(--accent2);font-style:italic">🔗 In group <strong>${escHtml(g.name)}</strong> — animation set on group</span></div>` : '';
+  })();
+
+  let html = `
+  <div class="prop-group">
+    <div class="prop-group-title">General</div>
+    <div class="prop-row"><label>Name</label><input id="prop-name" type="text" value="${escHtml(data.name)}" /></div>
+    <div class="prop-row"><label>Opacity</label><input id="prop-opacity" type="range" min="0" max="1" step=".05" value="${data.opacity}" /></div>
+  </div>
+  <div class="prop-group">
+    <div class="prop-group-title">Position &amp; Size</div>
+    <div class="prop-row"><label>X</label><input id="prop-x" type="number" value="${data.x}" /></div>
+    <div class="prop-row"><label>Y</label><input id="prop-y" type="number" value="${data.y}" /></div>
+    <div class="prop-row"><label>W</label><input id="prop-w" type="number" value="${data.w}" /></div>
+    <div class="prop-row"><label>H</label><input id="prop-h" type="number" value="${data.h}" /></div>
+    <div class="prop-row"><label>Z-Index</label><input id="prop-z" type="number" value="${data.zIndex}" /></div>
+  </div>`;
+
+  if (data.type === 'text') {
+    html += `
+    <div class="prop-group">
+      <div class="prop-group-title">Text</div>
+      <div class="prop-row"><label>Content</label><textarea id="pt-text">${escHtml(data.text)}</textarea></div>
+      <div class="prop-row"><label>Font</label>
+        <select id="pt-font">
+          ${['Arial','Verdana','Georgia','monospace','Impact','Trebuchet MS','Comic Sans MS'].map(f =>
+            `<option${data.fontFamily===f?' selected':''}>${f}</option>`).join('')}
+        </select>
+      </div>
+      <div class="prop-row"><label>Size</label><input id="pt-size" type="number" value="${data.fontSize}" min="8" max="200" /></div>
+      <div class="prop-row"><label>Color</label><input id="pt-color" type="color" value="${data.color}" /></div>
+      <div class="prop-row"><label>BG Color</label><input id="pt-bg" type="text" value="${data.bgColor}" placeholder="transparent" /></div>
+      <div class="prop-row"><label>Bold</label><input id="pt-bold" type="checkbox" ${data.bold?'checked':''} /></div>
+      <div class="prop-row"><label>Italic</label><input id="pt-italic" type="checkbox" ${data.italic?'checked':''} /></div>
+      <div class="prop-row"><label>Shadow</label><input id="pt-shadow" type="checkbox" ${data.shadow?'checked':''} /></div>
+      <div class="prop-row"><label>Shadow Color</label><input id="pt-shadowcolor" type="color" value="${data.shadowColor}" /></div>
+      <div class="prop-row"><label>Outline</label><input id="pt-outline" type="checkbox" ${data.outline?'checked':''} /></div>
+      <div class="prop-row"><label>Outline Color</label><input id="pt-outlinecolor" type="color" value="${data.outlineColor}" /></div>
+      <div class="prop-row"><label>Align</label>
+        <select id="pt-align">
+          ${['left','center','right'].map(a => `<option${data.align===a?' selected':''}>${a}</option>`).join('')}
+        </select>
+      </div>
+      <div class="prop-row"><label>Padding</label><input id="pt-padding" type="number" value="${data.padding}" min="0" max="60" /></div>
+      <div class="prop-row"><label>Radius</label><input id="pt-radius" type="number" value="${data.borderRadius}" min="0" max="100" /></div>
+      ${grpNote}
+      <div class="prop-row"><label>Animate</label><input id="pt-animate" type="checkbox" ${data.animate ? 'checked' : ''} /></div>
+      ${data.animate ? `<div class="prop-row"><label>Animation</label>
+        <select id="pt-anim-type">
+          <option value="float"${(data.animType || 'float') === 'float' ? ' selected' : ''}>Float</option>
+        </select>
+      </div>
+      <div class="prop-row"><label>Direction</label>
+        <select id="pt-float-dir">
+          <option value="up-down"${(data.floatDirection || 'up-down') === 'up-down' ? ' selected' : ''}>Up / Down</option>
+          <option value="left-right"${data.floatDirection === 'left-right' ? ' selected' : ''}>Left / Right</option>
+          <option value="diag-up-right"${data.floatDirection === 'diag-up-right' ? ' selected' : ''}>Diagonal Up-Right</option>
+          <option value="diag-down-right"${data.floatDirection === 'diag-down-right' ? ' selected' : ''}>Diagonal Down-Right</option>
+        </select>
+      </div>
+      <div class="prop-row"><label>Speed (s)</label><input id="pt-anim-speed" type="number" value="${data.animSpeed || 4}" min="0.2" max="30" step="0.1" /></div>` : ''}
+    </div>`;
+  }
+
+  if (data.type === 'clock') {
+    html += `
+    <div class="prop-group">
+      <div class="prop-group-title">Clock</div>
+      <div class="prop-row"><label>Font</label>
+        <select id="ck-font">
+          ${['monospace','Arial','Verdana','Impact'].map(f => `<option${data.fontFamily===f?' selected':''}>${f}</option>`).join('')}
+        </select>
+      </div>
+      <div class="prop-row"><label>Size</label><input id="ck-size" type="number" value="${data.fontSize}" min="8" max="200" /></div>
+      <div class="prop-row"><label>Color</label><input id="ck-color" type="color" value="${data.color}" /></div>
+      <div class="prop-row"><label>BG Color</label><input id="ck-bg" type="text" value="${data.bgColor}" placeholder="transparent" /></div>
+      <div class="prop-row"><label>Bold</label><input id="ck-bold" type="checkbox" ${data.bold?'checked':''} /></div>
+      <div class="prop-row"><label>24h format</label><input id="ck-24h" type="checkbox" ${data.format24?'checked':''} /></div>
+      <div class="prop-row"><label>Show Seconds</label><input id="ck-sec" type="checkbox" ${data.showSeconds?'checked':''} /></div>
+      <div class="prop-row"><label>Show Date</label><input id="ck-date" type="checkbox" ${data.showDate?'checked':''} /></div>
+    </div>`;
+  }
+
+  if (data.type === 'countdown') {
+    const dt = new Date(data.targetTimestamp);
+    const dtStr = dt.toISOString().slice(0,16);
+    html += `
+    <div class="prop-group">
+      <div class="prop-group-title">Countdown</div>
+      <div class="prop-row"><label>Label</label><input id="cd-label" type="text" value="${escHtml(data.label)}" /></div>
+      <div class="prop-row"><label>Target Time</label><input id="cd-target" type="datetime-local" value="${dtStr}" /></div>
+      <div class="prop-row"><label>Size</label><input id="cd-size" type="number" value="${data.fontSize}" min="8" max="200" /></div>
+      <div class="prop-row"><label>Color</label><input id="cd-color" type="color" value="${data.color}" /></div>
+      <div class="prop-row"><label>BG Color</label><input id="cd-bg" type="text" value="${data.bgColor}" placeholder="transparent" /></div>
+      <div class="prop-row"><label>Bold</label><input id="cd-bold" type="checkbox" ${data.bold?'checked':''} /></div>
+    </div>`;
+  }
+
+  if (data.type === 'image') {
+    html += `
+    <div class="prop-group">
+      <div class="prop-group-title">Image</div>
+      <div class="prop-row"><label>Fit</label>
+        <select id="img-fit">
+          ${['contain','cover','fill','none'].map(f => `<option${data.objectFit===f?' selected':''}>${f}</option>`).join('')}
+        </select>
+      </div>
+      ${grpNote}
+      <div class="prop-row"><label>Animate</label><input id="img-animate" type="checkbox" ${data.animate ? 'checked' : ''} /></div>
+      ${data.animate ? `<div class="prop-row"><label>Animation</label>
+        <select id="img-anim-type">
+          <option value="float"${(data.animType || 'float') === 'float' ? ' selected' : ''}>Float</option>
+        </select>
+      </div>
+      <div class="prop-row"><label>Direction</label>
+        <select id="img-float-dir">
+          <option value="up-down"${(data.floatDirection || 'up-down') === 'up-down' ? ' selected' : ''}>Up / Down</option>
+          <option value="left-right"${data.floatDirection === 'left-right' ? ' selected' : ''}>Left / Right</option>
+          <option value="diag-up-right"${data.floatDirection === 'diag-up-right' ? ' selected' : ''}>Diagonal Up-Right</option>
+          <option value="diag-down-right"${data.floatDirection === 'diag-down-right' ? ' selected' : ''}>Diagonal Down-Right</option>
+        </select>
+      </div>
+      <div class="prop-row"><label>Speed (s)</label><input id="img-anim-speed" type="number" value="${data.animSpeed || 4}" min="0.2" max="30" step="0.1" /></div>` : ''}
+      <div class="prop-row"><label>Upload</label><input type="file" id="img-file-upload" accept="image/*" /></div>
+    </div>`;
+  }
+
+  if (data.type === 'progress') {
+    html += `
+    <div class="prop-group">
+      <div class="prop-group-title">Progress Bar</div>
+      <div class="prop-row"><label>Label</label><input id="pb-label" type="text" value="${escHtml(data.label)}" /></div>
+      <div class="prop-row"><label>Value</label><input id="pb-value" type="number" value="${data.value}" min="0" /></div>
+      <div class="prop-row"><label>Max</label><input id="pb-max" type="number" value="${data.max}" min="1" /></div>
+      <div class="prop-row"><label>Bar Color</label><input id="pb-barcolor" type="color" value="${data.barColor}" /></div>
+      <div class="prop-row"><label>BG Color</label><input id="pb-bg" type="text" value="${data.bgColor}" placeholder="transparent" /></div>
+      <div class="prop-row"><label>Track Color</label><input id="pb-track" type="text" value="${data.trackColor}" /></div>
+      <div class="prop-row"><label>Font Size</label><input id="pb-fontsize" type="number" value="${data.fontSize}" min="8" max="80" /></div>
+      <div class="prop-row"><label>Text Color</label><input id="pb-color" type="color" value="${data.color}" /></div>
+      <div class="prop-row"><label>Show %</label><input id="pb-pct" type="checkbox" ${data.showPercent?'checked':''} /></div>
+      <div class="prop-row"><label>Radius</label><input id="pb-radius" type="number" value="${data.borderRadius}" min="0" max="50" /></div>
+    </div>`;
+  }
+
+  if (data.type === 'ticker') {
+    html += `
+    <div class="prop-group">
+      <div class="prop-group-title">Ticker</div>
+      <div class="prop-row"><label>Messages</label><textarea id="tk-msgs">${data.messages.map(escHtml).join('\n')}</textarea></div>
+      <div class="prop-row"><label>Separator</label><input id="tk-sep" type="text" value="${escHtml(data.separator)}" /></div>
+      <div class="prop-row"><label>Font Size</label><input id="tk-size" type="number" value="${data.fontSize}" min="8" max="120" /></div>
+      <div class="prop-row"><label>Color</label><input id="tk-color" type="color" value="${data.color}" /></div>
+      <div class="prop-row"><label>BG Color</label><input id="tk-bg" type="text" value="${data.bgColor}" placeholder="transparent" /></div>
+      <div class="prop-row"><label>Speed (s)</label><input id="tk-speed" type="number" value="${data.speed}" min="4" max="120" /></div>
+    </div>`;
+  }
+
+  if (data.type === 'box') {
+    html += `
+    <div class="prop-group">
+      <div class="prop-group-title">Box / Shape</div>
+      <div class="prop-row"><label>BG Color</label><input id="bx-bg" type="text" value="${data.bgColor}" /></div>
+      <div class="prop-row"><label>Transparent Fill</label><input id="bx-transparent" type="checkbox" ${data.fillTransparent ? 'checked' : ''} /></div>
+      <div class="prop-row"><label>Border Color</label><input id="bx-bcolor" type="color" value="${data.borderColor}" /></div>
+      <div class="prop-row"><label>Border W</label><input id="bx-bwidth" type="number" value="${data.borderWidth}" min="0" max="20" /></div>
+      <div class="prop-row"><label>Radius</label><input id="bx-radius" type="number" value="${data.borderRadius}" min="0" max="200" /></div>
+    </div>`;
+  }
+
+  if (data.type === 'utility') {
+    data.utilMode = 'chat';
+    const streams = ensureUtilityStreams(data);
+    html += `
+    <div class="prop-group">
+      <div class="prop-group-title">Utility (Twitch)</div>
+      <div class="prop-row"><label>Style</label>
+        <select id="ut-style">
+          <option value="normal"${(data.utilStyle || 'normal')==='normal'?' selected':''}>Normal</option>
+          <option value="bubble"${data.utilStyle==='bubble'?' selected':''}>Bubble</option>
+          <option value="text-chat"${data.utilStyle==='text-chat'?' selected':''}>Text Chat</option>
+        </select>
+      </div>
+      <div class="prop-row"><label>Custom Colors</label><input id="ut-custom-colors" type="checkbox" ${data.utilCustomColors ? 'checked' : ''} /></div>
+      ${streams.map((stream, idx) => `<div class="prop-row"><label>Streamer ${idx + 1}</label><input id="ut-stream-channel-${idx}" type="text" value="${escHtml(stream.channel || '')}" placeholder="channel_name" /><input id="ut-stream-color-${idx}" type="color" value="${utilityColorToPickerValue(stream.color || '#a78bfa')}" title="${escHtml(stream.color || '#a78bfa')}" ${data.utilCustomColors ? '' : 'disabled'} /></div>`).join('')}
+      <div class="prop-row"><button class="btn btn-secondary" id="ut-stream-add" style="flex:1">+</button><button class="btn btn-secondary" id="ut-stream-remove" style="flex:1">-</button></div>
+      <div class="prop-row"><label>Username</label><input id="ut-user" type="text" value="${escHtml(data.username || '')}" placeholder="bot_or_user" /></div>
+      <div class="prop-row"><label>OAuth</label><input id="ut-token" type="password" value="${escHtml(data.oauthToken || '')}" placeholder="oauth:xxxx" /></div>
+      <div class="prop-row"><label>Max Lines</label><input id="ut-max" type="number" value="${data.maxItems || 6}" min="1" max="30" /></div>
+      <div class="prop-row"><label>Font</label><input id="ut-font" type="text" value="${escHtml(data.fontFamily || 'Arial')}" /></div>
+      <div class="prop-row"><label>Font Size</label><input id="ut-size" type="number" value="${data.fontSize || 16}" min="8" max="64" /></div>
+      <div class="prop-row"><label>Text Color</label><input id="ut-color" type="color" value="${data.color || '#ffffff'}" /></div>
+      <div class="prop-row"><label>BG Color</label><input id="ut-bg" type="text" value="${escHtml(data.bgColor || 'rgba(0,0,0,0.65)')}" /></div>
+      <div class="prop-row"><label>Radius</label><input id="ut-radius" type="number" value="${data.borderRadius || 8}" min="0" max="100" /></div>
+      <div class="prop-row"><button class="btn btn-primary" id="ut-connect" style="width:100%">Connect Twitch</button></div>
+      <div class="prop-row"><button class="btn btn-secondary" id="ut-clear" style="width:100%">Clear Feed</button></div>
+      <div class="prop-row"><label>Status</label><input type="text" value="${escHtml(data.utilStatus || 'Not connected')}" readonly /></div>
+    </div>`;
+  }
+
+  html += `<div class="prop-group">
+    <button class="btn btn-danger" id="btn-del-sel" style="width:100%">🗑 Delete Widget</button>
+  </div>`;
+
+  panel.innerHTML = html;
+  bindPropsEvents(data);
+}
+
+function bindPropsEvents(data) {
+  const bind = (id, prop, transform) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const isSelect = el.tagName === 'SELECT';
+    const ev = (el.type === 'checkbox' || isSelect) ? 'change' : 'input';
+    el.addEventListener(ev, () => {
+      data[prop] = el.type === 'checkbox' ? el.checked : (transform ? transform(el.value) : el.value);
+      refreshElement(data.id);
+    });
+  };
+  const num = v => parseFloat(v);
+  const int = v => parseInt(v);
+
+  // General
+  bind('prop-name',    'name');
+  bind('prop-opacity', 'opacity', num);
+  bind('prop-x',       'x',       int);
+  bind('prop-y',       'y',       int);
+  bind('prop-w',       'w',       int);
+  bind('prop-h',       'h',       int);
+  bind('prop-z',       'zIndex',  int);
+
+  // Text
+  bind('pt-text',       'text');
+  bind('pt-font',       'fontFamily');
+  bind('pt-size',       'fontSize',  int);
+  bind('pt-color',      'color');
+  bind('pt-bg',         'bgColor');
+  bind('pt-bold',       'bold');
+  bind('pt-italic',     'italic');
+  bind('pt-shadow',     'shadow');
+  bind('pt-shadowcolor','shadowColor');
+  bind('pt-outline',    'outline');
+  bind('pt-outlinecolor','outlineColor');
+  bind('pt-align',      'align');
+  bind('pt-padding',    'padding',  int);
+  bind('pt-radius',     'borderRadius', int);
+  bind('pt-anim-type',  'animType');
+  bind('pt-float-dir',  'floatDirection');
+  bind('pt-anim-speed', 'animSpeed', num);
+  const ptAnimate = document.getElementById('pt-animate');
+  if (ptAnimate) {
+    ptAnimate.addEventListener('change', () => {
+      data.animate = ptAnimate.checked;
+      refreshElement(data.id);
+      renderPropsPanel();
+    });
+  }
+
+  // Clock
+  bind('ck-font',  'fontFamily');
+  bind('ck-size',  'fontSize',  int);
+  bind('ck-color', 'color');
+  bind('ck-bg',    'bgColor');
+  bind('ck-bold',  'bold');
+  bind('ck-24h',   'format24');
+  bind('ck-sec',   'showSeconds');
+  bind('ck-date',  'showDate');
+
+  // Countdown
+  bind('cd-label', 'label');
+  bind('cd-size',  'fontSize', int);
+  bind('cd-color', 'color');
+  bind('cd-bg',    'bgColor');
+  bind('cd-bold',  'bold');
+  const cdTarget = document.getElementById('cd-target');
+  if (cdTarget) cdTarget.addEventListener('change', () => {
+    data.targetTimestamp = new Date(cdTarget.value).getTime();
+  });
+
+  // Image
+  bind('img-fit', 'objectFit');
+  bind('img-anim-type', 'animType');
+  bind('img-float-dir', 'floatDirection');
+  bind('img-anim-speed', 'animSpeed', num);
+  const imgAnimate = document.getElementById('img-animate');
+  if (imgAnimate) {
+    imgAnimate.addEventListener('change', () => {
+      data.animate = imgAnimate.checked;
+      refreshElement(data.id);
+      renderPropsPanel();
+    });
+  }
+  const imgFileUpload = document.getElementById('img-file-upload');
+  if (imgFileUpload) {
+    imgFileUpload.addEventListener('change', () => {
+      const file = imgFileUpload.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => { data.src = reader.result; refreshElement(data.id); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Progress
+  bind('pb-label',   'label');
+  bind('pb-value',   'value',     num);
+  bind('pb-max',     'max',       num);
+  bind('pb-barcolor','barColor');
+  bind('pb-bg',      'bgColor');
+  bind('pb-track',   'trackColor');
+  bind('pb-fontsize','fontSize',  int);
+  bind('pb-color',   'color');
+  bind('pb-pct',     'showPercent');
+  bind('pb-radius',  'borderRadius', int);
+
+  // Ticker
+  bind('tk-sep',   'separator');
+  bind('tk-size',  'fontSize', int);
+  bind('tk-color', 'color');
+  bind('tk-bg',    'bgColor');
+  bind('tk-speed', 'speed',   num);
+  const tkMsgs = document.getElementById('tk-msgs');
+  if (tkMsgs) tkMsgs.addEventListener('input', () => {
+    data.messages = tkMsgs.value.split('\n').filter(l => l.trim() !== '');
+    refreshElement(data.id);
+  });
+
+  // Box
+  bind('bx-bg',     'bgColor');
+  bind('bx-transparent', 'fillTransparent');
+  bind('bx-bcolor', 'borderColor');
+  bind('bx-bwidth', 'borderWidth', int);
+  bind('bx-radius', 'borderRadius', int);
+
+  // Utility
+  data.utilMode = 'chat';
+  bind('ut-style', 'utilStyle');
+  const customColorsToggle = document.getElementById('ut-custom-colors');
+  if (customColorsToggle) {
+    customColorsToggle.addEventListener('change', () => {
+      data.utilCustomColors = customColorsToggle.checked;
+      refreshElement(data.id);
+      renderPropsPanel();
+    });
+  }
+  bind('ut-user', 'username');
+  bind('ut-token', 'oauthToken');
+  bind('ut-max', 'maxItems', int);
+  bind('ut-font', 'fontFamily');
+  bind('ut-size', 'fontSize', int);
+  bind('ut-color', 'color');
+  bind('ut-bg', 'bgColor');
+  bind('ut-radius', 'borderRadius', int);
+  const streams = ensureUtilityStreams(data);
+  streams.forEach((_, idx) => {
+    const channelInput = document.getElementById(`ut-stream-channel-${idx}`);
+    if (channelInput) {
+      channelInput.addEventListener('input', () => {
+        streams[idx].channel = normalizeChannelName(channelInput.value);
+        data.channel = normalizeChannelName(streams[0]?.channel || '');
+        refreshElement(data.id);
+      });
+    }
+
+    const colorInput = document.getElementById(`ut-stream-color-${idx}`);
+    if (colorInput) {
+      colorInput.addEventListener('input', () => {
+        if (!data.utilCustomColors) return;
+        streams[idx].color = normalizeUtilityColor(colorInput.value, streams[idx].color || '#a78bfa');
+        refreshElement(data.id);
+      });
+    }
+  });
+
+  document.getElementById('ut-stream-add')?.addEventListener('click', () => {
+    const list = ensureUtilityStreams(data);
+    list.push({ channel: '', color: '#ffffff' });
+    data.channel = normalizeChannelName(list[0]?.channel || '');
+    refreshElement(data.id);
+    renderPropsPanel();
+  });
+
+  document.getElementById('ut-stream-remove')?.addEventListener('click', () => {
+    const list = ensureUtilityStreams(data);
+    if (list.length <= 1) return;
+    list.pop();
+    data.channel = normalizeChannelName(list[0]?.channel || '');
+    refreshElement(data.id);
+    renderPropsPanel();
+  });
+
+  document.getElementById('ut-connect')?.addEventListener('click', () => connectTwitch());
+  document.getElementById('ut-clear')?.addEventListener('click', () => {
+    data.utilItems = [];
+    refreshElement(data.id);
+  });
+
+  // Delete
+  document.getElementById('btn-del-sel')?.addEventListener('click', () => deleteElement(data.id));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LIVE CLOCK TICK
+// ═══════════════════════════════════════════════════════════
+function tickClocks() {
+  elements.forEach(data => {
+    if (data.type !== 'clock') return;
+    const el = previewCanvas.querySelector(`.w-clock[data-id="${data.id}"]`);
+    if (!el) return;
+    const now = new Date();
+    let h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
+    if (!data.format24) { h = h % 12 || 12; }
+    const pad = n => String(n).padStart(2, '0');
+    let str = `${pad(h)}:${pad(m)}${data.showSeconds ? ':'+pad(s) : ''}`;
+    if (!data.format24) str += h >= 12 ? ' PM' : ' AM';
+    if (data.showDate) {
+      const d = now.toLocaleDateString(undefined, {month:'short',day:'numeric',year:'numeric'});
+      str = d + '  ' + str;
+    }
+    el.textContent = str;
+  });
+}
+
+function tickCountdowns() {
+  elements.forEach(data => {
+    if (data.type !== 'countdown') return;
+    const el = previewCanvas.querySelector(`.w-countdown[data-id="${data.id}"] .cd-display`);
+    if (!el) return;
+    const diff = data.targetTimestamp - Date.now();
+    if (diff <= 0) { el.textContent = '00:00:00'; return; }
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000)   / 1000);
+    const pad = n => String(n).padStart(2, '0');
+    el.textContent = `${pad(h)}:${pad(m)}:${pad(s)}`;
+  });
+}
+
+setInterval(() => { tickClocks(); tickCountdowns(); }, 500);
+
+// ═══════════════════════════════════════════════════════════
+//  CLEAR
+// ═══════════════════════════════════════════════════════════
+document.getElementById('btn-clear').addEventListener('click', () => {
+  if (!confirm('Clear all widgets?')) return;
+  elements = [];
+  groups = [];
+  nextGroupId = 1;
+  selectedIds.clear();
+  selectedGroupId = null;
+  previewCanvas.innerHTML = '';
+  deselectAll();
+  renderLayersPanel();
+});
+
+// ═══════════════════════════════════════════════════════════
+//  IMPORT HTML (project metadata)
+// ═══════════════════════════════════════════════════════════
+document.getElementById('btn-import-html').addEventListener('click', () => {
+  document.getElementById('file-import-html').click();
+});
+document.getElementById('file-import-html').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const html = String(ev.target.result || '');
+      // Accept any attribute order/spacing as long as id="overlay-project" is present.
+      const match = html.match(/<script\b[^>]*\bid=["']overlay-project["'][^>]*>([\s\S]*?)<\/script>/i);
+      if (!match) throw new Error('No embedded project data');
+      const parsed = JSON.parse(match[1]);
+      if (!parsed.elements || !Array.isArray(parsed.elements)) throw new Error('Invalid format');
+
+      elements = parsed.elements;
+      canvasW = parsed.canvasW || 1920;
+      canvasH = parsed.canvasH || 1080;
+      groups = parsed.groups || [];
+      nextGroupId = Math.max(...groups.map(g => g.id).concat([0])) + 1;
+      canvasWInput.value = canvasW;
+      canvasHInput.value = canvasH;
+      nextId = Math.max(...elements.map(el => el.id), 0) + 1;
+      previewCanvas.innerHTML = '';
+      applyCanvasSize();
+      elements.forEach(d => createElement(d));
+      deselectAll();
+      renderLayersPanel();
+      showSnack('Project imported from HTML!');
+    } catch {
+      showSnack('Import HTML failed — missing/invalid embedded project data', 'var(--danger)');
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
+
+// ═══════════════════════════════════════════════════════════
+//  EXPORT OVERLAY HTML
+// ═══════════════════════════════════════════════════════════
+function buildExportHTML() {
+  let inner = '';
+  const cutouts = [];
+  const projectData = JSON.stringify({ canvasW, canvasH, elements, groups }).replace(/</g, '\\u003c');
+  [...elements].sort((a,b) => a.zIndex - b.zIndex).forEach(data => {
+    if (!data.visible) return;
+
+    // Transparent box acts as a cutout in export, not a rendered shape.
+    if (data.type === 'box' && data.fillTransparent) {
+      cutouts.push({
+        x: data.x,
+        y: data.y,
+        w: data.w,
+        h: data.h,
+        r: data.borderRadius || 0,
+      });
+      return;
+    }
+
+    let elStyle = [
+      'position:absolute',
+      `left:${data.x}px`, `top:${data.y}px`,
+      `width:${data.w}px`, `height:${data.h}px`,
+      `z-index:${data.zIndex}`,
+      `opacity:${data.opacity}`,
+      effectiveAnimStyle(data, 1),
+    ].filter(Boolean).join(';');
+
+    let content = '';
+    switch (data.type) {
+      case 'text': {
+        const s = [
+          `font-size:${data.fontSize}px`,
+          `font-family:${data.fontFamily}`,
+          `color:${data.color}`,
+          data.bold   ? 'font-weight:bold'   : '',
+          data.italic ? 'font-style:italic'  : '',
+          `text-align:${data.align}`,
+          `padding:${data.padding}px`,
+          `border-radius:${data.borderRadius}px`,
+          data.bgColor ? `background:${data.bgColor}` : '',
+          data.shadow  ? `text-shadow:1px 1px 4px ${data.shadowColor}` : '',
+          data.outline ? `-webkit-text-stroke:1px ${data.outlineColor}` : '',
+          'width:100%','height:100%','display:flex','align-items:center','box-sizing:border-box',
+        ].filter(Boolean).join(';');
+        content = `<div style="${s}">${escHtml(data.text)}</div>`;
+        break;
+      }
+      case 'clock': {
+        const s = [
+          `font-size:${data.fontSize}px`,
+          `font-family:${data.fontFamily}`,
+          `color:${data.color}`,
+          data.bold    ? 'font-weight:bold'  : '',
+          data.bgColor ? `background:${data.bgColor}` : '',
+          data.shadow  ? `text-shadow:1px 1px 4px ${data.shadowColor}` : '',
+          'width:100%','height:100%','display:flex','align-items:center','justify-content:center',
+        ].filter(Boolean).join(';');
+        content = `<div id="clock_${data.id}" style="${s}"></div>
+<script>
+(function(){
+  function tick(){
+    var n=new Date(),h=n.getHours(),m=n.getMinutes(),s=n.getSeconds(),p=function(x){return String(x).padStart(2,'0')};
+    ${!data.format24 ? "var ampm=h>=12?' PM':' AM';h=h%12||12;" : "var ampm='';" }
+    var str=p(h)+':'+p(m)${data.showSeconds ? "+':'+p(s)" : ''}+ampm;
+    ${data.showDate ? "str=n.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})+'  '+str;" : ''}
+    var el=document.getElementById('clock_${data.id}');if(el)el.textContent=str;
+  }
+  tick();setInterval(tick,500);
+})();
+<\/script>`;
+        break;
+      }
+      case 'countdown': {
+        const s = [
+          `font-size:${data.fontSize}px`,
+          `font-family:${data.fontFamily}`,
+          `color:${data.color}`,
+          data.bold    ? 'font-weight:bold'  : '',
+          data.bgColor ? `background:${data.bgColor}` : '',
+          data.shadow  ? `text-shadow:1px 1px 4px ${data.shadowColor}` : '',
+          'width:100%','height:100%','display:flex','align-items:center','justify-content:center','flex-direction:column',
+        ].filter(Boolean).join(';');
+        content = `<div style="${s}">
+  ${data.label ? `<div style="font-size:${data.fontSize*0.45}px;opacity:.7">${escHtml(data.label)}</div>` : ''}
+  <div id="cd_${data.id}">00:00:00</div>
+</div>
+<script>
+(function(){
+  var target=${data.targetTimestamp};
+  function tick(){
+    var diff=target-Date.now();
+    if(diff<=0){document.getElementById('cd_${data.id}').textContent='00:00:00';return;}
+    var h=Math.floor(diff/3600000),m=Math.floor((diff%3600000)/60000),s=Math.floor((diff%60000)/1000);
+    var p=function(x){return String(x).padStart(2,'0')};
+    document.getElementById('cd_${data.id}').textContent=p(h)+':'+p(m)+':'+p(s);
+  }
+  tick();setInterval(tick,500);
+})();
+<\/script>`;
+        break;
+      }
+      case 'image':
+        if (data.src) content = `<img src="${data.src}" style="width:100%;height:100%;object-fit:${data.objectFit}" alt="" />`;
+        break;
+      case 'progress': {
+        const pct = Math.min(100, Math.max(0, (data.value / data.max) * 100));
+        content = `<div style="width:100%;height:100%;padding:4px;background:${data.bgColor};border-radius:${data.borderRadius}px;box-sizing:border-box;display:flex;flex-direction:column;gap:2px">
+  ${data.showLabel ? `<div style="font-size:${data.fontSize}px;color:${data.color}">${escHtml(data.label)}${data.showPercent?' — '+Math.round(pct)+'%':''}</div>` : ''}
+  <div style="flex:1;background:${data.trackColor};border-radius:${data.borderRadius}px;overflow:hidden">
+    <div style="width:${pct}%;height:100%;background:${data.barColor};border-radius:${data.borderRadius}px"></div>
+  </div>
+</div>`;
+        break;
+      }
+      case 'ticker': {
+        const msgs = data.messages.map(escHtml).join(escHtml(data.separator));
+        const doubled = msgs + escHtml(data.separator) + msgs;
+        content = `<div style="width:100%;height:100%;background:${data.bgColor};border-radius:${data.borderRadius}px;overflow:hidden;white-space:nowrap;display:flex;align-items:center">
+  <div style="display:inline-block;font-size:${data.fontSize}px;font-family:${data.fontFamily};color:${data.color};animation:ticker_${data.id} ${data.speed}s linear infinite">${doubled}</div>
+</div>
+<style>@keyframes ticker_${data.id}{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}</style>`;
+        break;
+      }
+      case 'box':
+        content = `<div style="width:100%;height:100%;background:${data.fillTransparent ? 'transparent' : data.bgColor};border:${data.borderWidth}px solid ${data.borderColor};border-radius:${data.borderRadius}px"></div>`;
+        break;
+      case 'utility': {
+        const safeMode = 'chat';
+        const safeStyle = String(data.utilStyle || 'normal');
+        const safeCustomColors = !!data.utilCustomColors;
+        const safeUser = String(data.username || '').replace(/'/g, "\\'");
+        const safeToken = String(normalizeOauthToken(data.oauthToken || '')).replace(/'/g, "\\'");
+        const safeColor = String(data.color || '#ffffff').replace(/'/g, "\\'");
+        const safeBg = String(data.bgColor || 'rgba(0,0,0,0.65)').replace(/'/g, "\\'");
+        const safeFont = String(data.fontFamily || 'Arial').replace(/'/g, "\\'");
+        const safeStreams = JSON.stringify(ensureUtilityStreams(data)).replace(/</g, '\\u003c');
+        const safeSize = parseInt(data.fontSize || 16);
+        const safeMax = Math.max(1, parseInt(data.maxItems || 6));
+        const safeRadius = parseInt(data.borderRadius || 8);
+          content = `<div id="ut_${data.id}" style="width:100%;height:100%;padding:6px;background:${safeBg};border-radius:${safeRadius}px;overflow:hidden;display:flex;flex-direction:column;gap:4px">
+        <div id="ut_head_${data.id}" style="font-size:${Math.max(10, Math.round(safeSize * 0.85))}px;opacity:.8;font-family:${safeFont};color:${safeColor};font-weight:700;letter-spacing:.04em">Twitch ${safeMode.toUpperCase()}</div>
+  <div id="ut_list_${data.id}" style="font-size:${safeSize}px;font-family:${safeFont};color:${safeColor};overflow:hidden;flex:1;min-height:0;position:relative">Connecting...</div>
+</div>
+<script>
+(function(){
+  var mode='${safeMode}', utilStyle='${safeStyle}', utilCustomColors=${safeCustomColors ? 'true' : 'false'}, user='${safeUser}', token='${safeToken}', maxItems=${safeMax}, streams=${safeStreams};
+  var listEl=document.getElementById('ut_list_${data.id}');
+  var headEl=document.getElementById('ut_head_${data.id}');
+  var items=[];
+  function normChannel(v){ return String(v||'').trim().toLowerCase().replace(/^#/, ''); }
+  function normColor(v,fallback){ var c=String(v||'').trim(); return c||fallback; }
+  var streamMap={};
+  (Array.isArray(streams)?streams:[]).forEach(function(s){ var ch=normChannel(s&&s.channel); if(!ch||streamMap[ch]) return; streamMap[ch]={ channel:ch, color:normColor(s&&s.color, '') }; });
+  var channels=Object.keys(streamMap);
+  function esc(s){return String(s||'').replace(/[&<>\"]/g,function(c){return({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'})[c]||c;});}
+  function norm(item){ if(item&&typeof item==='object'){ var userName=String(item.user||''); var message=String(item.message||item.text||''); var text=String(item.text||(userName?(userName+': '+message):message)); return {kind:item.kind||(userName?'chat':'line'),user:userName,message:message,text:text,room:normChannel(item.room||''),color:normColor(item.color,''),chatterColor:normColor(item.chatterColor,'')}; } var text=String(item||''); var idx=text.indexOf(': '); if(idx>0) return {kind:'chat',user:text.slice(0,idx),message:text.slice(idx+2),text:text,room:'',color:'',chatterColor:''}; return {kind:'line',user:'',message:text,text:text,room:'',color:'',chatterColor:''}; }
+  function accent(seed){ var src=String(seed||'chat'),hash=0; for(var i=0;i<src.length;i++){ hash=((hash<<5)-hash)+src.charCodeAt(i); hash|=0; } return 'hsl('+(Math.abs(hash)%360)+' 72% 62%)'; }
+  function streamColor(item){ var room=normChannel(item&&item.room||''); var stream=room?streamMap[room]:null; return stream?normColor(stream.color,''):''; }
+  function accentFor(item,index){ if(utilCustomColors){ return normColor(streamColor(item), '${safeColor}'); } return normColor(item.chatterColor, accent(item.user||item.room||index||'chat')); }
+  function msgColor(item,index){ return '${safeColor}'; }
+  function normalRow(item,index){ var n=norm(item); var color=accentFor(n,index); return '<div style="padding:9px 14px;border-radius:16px;background:rgba(8,12,20,.62);border:1px solid rgba(255,255,255,.08);box-shadow:0 10px 18px rgba(0,0,0,.18)">'+(n.room?'<div style="font-size:${Math.max(8, Math.round(safeSize * 0.5))}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:'+color+';opacity:.85">#'+esc(n.room)+'</div>':'')+(n.user?'<div style="font-size:${Math.max(9, Math.round(safeSize * 0.62))}px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:'+color+';margin-bottom:3px">'+esc(n.user)+'</div>':'')+'<div style="line-height:1.35;color:'+msgColor(n,index)+'">'+esc(n.message||n.text)+'</div></div>'; }
+  function textChatRow(item,index){ var n=norm(item); var color=accentFor(n,index); return '<div style="position:relative;padding:11px 15px 12px 19px;border-radius:16px;background:linear-gradient(135deg, rgba(7,10,18,.92), rgba(24,30,48,.82));border:1px solid rgba(255,255,255,.12);box-shadow:0 12px 24px rgba(0,0,0,.24);overflow:hidden"><div style="position:absolute;left:0;top:0;bottom:0;width:5px;background:'+color+'"></div>'+(n.room?'<div style="font-size:${Math.max(8, Math.round(safeSize * 0.5))}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:'+color+';opacity:.9;padding-left:2px">#'+esc(n.room)+'</div>':'')+(n.user?'<div style="font-size:${Math.max(9, Math.round(safeSize * 0.62))}px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:'+color+';margin-bottom:4px;padding-left:2px">'+esc(n.user)+'</div>':'')+'<div style="font-size:${safeSize}px;line-height:1.3;color:'+msgColor(n,index)+';font-weight:700;padding-left:2px">'+esc(n.message||n.text)+'</div></div>'; }
+  function bubbleRow(item,index){ var n=norm(item); var color=accentFor(n,index); return '<div style="padding:${Math.max(8, Math.round(10))}px ${Math.max(10, Math.round(14))}px;border-radius:${Math.max(18, Math.round(22))}px;background:linear-gradient(135deg, rgba(18,22,34,.92), rgba(48,56,88,.84));border:1px solid rgba(255,255,255,.12);box-shadow:0 14px 28px rgba(0,0,0,.26);backdrop-filter:blur(6px);max-width:78%">'+(n.room?'<div style="font-size:${Math.max(8, Math.round(safeSize * 0.52))}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:'+color+';opacity:.9;margin-bottom:2px">#'+esc(n.room)+'</div>':'')+(n.user?'<div style="font-size:${Math.max(9, Math.round(safeSize * 0.62))}px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:'+color+';margin-bottom:2px">'+esc(n.user)+'</div>':'')+'<div style="font-size:${safeSize}px;line-height:1.25;color:'+msgColor(n,index)+';font-weight:700;text-shadow:0 1px 1px rgba(0,0,0,.35)">'+esc(n.message||n.text)+'</div></div>'; }
+  var listBodyEl=null;
+  function ensureListBody(){
+    if(!listEl) return null;
+    if(listBodyEl && listEl.contains(listBodyEl)) return listBodyEl;
+    if(mode==='chat' && utilStyle==='bubble'){
+      listEl.innerHTML='<div data-ut-items="1" style="display:flex;flex-direction:column;align-items:flex-start;gap:8px;overflow:hidden;height:100%;min-height:0;justify-content:flex-end"></div>';
+    } else if(mode==='chat' && utilStyle==='text-chat'){
+      var textAnim='ut_textchat_${data.id}';
+      listEl.innerHTML='<style>@keyframes '+textAnim+'{0%{transform:translate3d(0,22%,0);opacity:0}100%{transform:translate3d(0,0,0);opacity:1}}</style><div data-ut-items="1" style="display:flex;flex-direction:column;gap:6px;overflow:hidden;height:100%;min-height:0;justify-content:flex-end"></div>';
+    } else {
+      listEl.innerHTML='<div data-ut-items="1" style="display:flex;flex-direction:column;gap:6px;overflow:hidden;height:100%;min-height:0;justify-content:flex-end"></div>';
+    }
+    listBodyEl=listEl.querySelector('[data-ut-items="1"]');
+    return listBodyEl;
+  }
+  function renderRow(item,index,animateNew){
+    if(mode==='chat' && utilStyle==='bubble') return bubbleRow(item,index);
+    if(mode==='chat' && utilStyle==='text-chat'){
+      var textAnim='ut_textchat_${data.id}';
+      var dur=animateNew?Math.max(.22,.32):Math.max(.22,.34+(index*.04));
+      return '<div style="animation:'+textAnim+' '+dur+'s cubic-bezier(.18,.7,.22,1) both">'+textChatRow(item,index)+'</div>';
+    }
+    return normalRow(item,index);
+  }
+  function render(){
+    if(!listEl) return;
+    if(headEl){ headEl.textContent='Twitch '+mode.toUpperCase(); }
+    if(!items.length){ listBodyEl=null; listEl.innerHTML='<div style="opacity:.7;display:flex;align-items:center;justify-content:center;height:100%;min-height:0">Waiting for Twitch data...</div>'; return; }
+    var body=ensureListBody();
+    if(!body) return;
+    body.innerHTML=items.map(function(item,index){ return renderRow(item,index,false); }).join('');
+  }
+  function push(x){
+    items.push(x);
+    if(items.length>maxItems) items=items.slice(-maxItems);
+    if(!listEl) return;
+    if(headEl){ headEl.textContent='Twitch '+mode.toUpperCase(); }
+    var body=ensureListBody();
+    if(!body){ render(); return; }
+    body.insertAdjacentHTML('beforeend', renderRow(x, items.length - 1, true));
+    while(body.children.length>items.length){ body.removeChild(body.firstElementChild); }
+    while(body.children.length>maxItems){ body.removeChild(body.firstElementChild); }
+  }
+  function parseTags(tagPart){ var out={}; String(tagPart||'').split(';').forEach(function(p){var i=p.indexOf('='); if(i>-1) out[p.slice(0,i)]=p.slice(i+1);}); return out; }
+  if(!channels.length){ if(listEl) listEl.textContent='Set streamer channels in editor'; return; }
+  var anon = !(user&&token);
+  if(anon){ user='justinfan'+String(Math.floor(10000+Math.random()*89999)); token='SCHMOOPIIE'; }
+  render();
+  var ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
+  ws.onopen=function(){ ws.send('CAP REQ :twitch.tv/tags twitch.tv/commands'); ws.send('PASS '+token); ws.send('NICK '+user); channels.forEach(function(ch){ ws.send('JOIN #'+ch); }); if(headEl) headEl.textContent='Twitch '+mode.toUpperCase()+' • '+(anon?'connected anonymously':'connected'); };
+  ws.onmessage=function(e){ String(e.data||'').split('\\r\\n').filter(Boolean).forEach(function(raw){
+    if(raw.indexOf('PING')===0){ ws.send(raw.replace('PING','PONG')); return; }
+    var tagPart=''; var core=raw;
+    if(raw.indexOf('@')===0){ var firstSpace=raw.indexOf(' '); if(firstSpace>1){ tagPart=raw.slice(1,firstSpace); core=raw.slice(firstSpace+1); } }
+    var priv = core.match(/^:([^!]+)![^ ]+ PRIVMSG #([^ ]+) :([\\s\\S]*)$/);
+    if(priv){ var tags=parseTags(tagPart),name=priv[1],room=priv[2].toLowerCase(),msg=priv[3],stream=streamMap[room]; if(!stream) return;
+      if(mode==='chat'){ var chatterColor=normColor(tags.color||'',''); var customColor=utilCustomColors?stream.color:''; push({kind:'chat',room:room,color:customColor,chatterColor:chatterColor,user:name,message:msg,text:name+': '+msg}); }
+      return;
+    }
+    var notice = core.match(/^:tmi\\.twitch\\.tv USERNOTICE #([^ ]+)(?: :([\\s\\S]*))?$/);
+    if(notice){ return; }
+  }); };
+  ws.onerror=function(){ if(headEl) headEl.textContent='Twitch '+mode.toUpperCase()+' • error'; if(!items.length && listEl) listEl.innerHTML='<div style="opacity:.7;display:flex;align-items:center;justify-content:center;height:100%;min-height:0">Twitch connection error</div>'; };
+  ws.onclose=function(){ if(headEl) headEl.textContent='Twitch '+mode.toUpperCase()+' • disconnected'; if(!items.length && listEl) listEl.innerHTML='<div style="opacity:.7;display:flex;align-items:center;justify-content:center;height:100%;min-height:0">Disconnected</div>'; };
+})();
+<\/script>`;
+        break;
+      }
+    }
+    inner += `<div style="${elStyle}">\n  ${content}\n</div>\n`;
+  });
+
+  let maskCss = '';
+  if (cutouts.length) {
+    const maskSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasW}" height="${canvasH}">`
+      + `<rect x="0" y="0" width="${canvasW}" height="${canvasH}" fill="white"/>`
+      + cutouts.map(c => `<rect x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" rx="${c.r}" ry="${c.r}" fill="black"/>`).join('')
+      + `</svg>`;
+    const maskUrl = `data:image/svg+xml;utf8,${encodeURIComponent(maskSvg)}`;
+    maskCss = [
+      `-webkit-mask-image:url('${maskUrl}')`,
+      `mask-image:url('${maskUrl}')`,
+      `-webkit-mask-repeat:no-repeat`,
+      `mask-repeat:no-repeat`,
+      `-webkit-mask-size:100% 100%`,
+      `mask-size:100% 100%`,
+      `-webkit-mask-position:0 0`,
+      `mask-position:0 0`,
+      `-webkit-mask-mode:luminance`,
+      `mask-mode:luminance`,
+    ].join(';') + ';';
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{width:${canvasW}px;height:${canvasH}px;overflow:hidden;background:transparent}
+    #overlay-root{position:relative;width:${canvasW}px;height:${canvasH}px;${maskCss}}
+    @keyframes float-bob {
+      0%, 100% { transform: translate(0, 0); }
+      50% { transform: translate(var(--float-x, 0px), var(--float-y, -8px)); }
+    }
+  </style>
+</head>
+<body>
+<div id="overlay-root">
+${inner}
+</div>
+<script id="overlay-project" type="application/json">${projectData}<\/script>
+</body>
+</html>`;
+}
+
+document.getElementById('btn-export').addEventListener('click', () => {
+  document.getElementById('export-code').value = buildExportHTML();
+  document.getElementById('export-modal').classList.add('open');
+});
+document.getElementById('btn-modal-close').addEventListener('click', () => {
+  document.getElementById('export-modal').classList.remove('open');
+});
+document.getElementById('btn-copy-code').addEventListener('click', () => {
+  const ta = document.getElementById('export-code');
+  navigator.clipboard.writeText(ta.value).then(() => showSnack('Copied to clipboard!'));
+});
+document.getElementById('btn-download-html').addEventListener('click', () => {
+  const code = document.getElementById('export-code').value;
+  const a = document.createElement('a');
+  a.href = 'data:text/html;charset=utf-8,' + encodeURIComponent(code);
+  a.download = 'stream-overlay.html';
+  a.click();
+  showSnack('Overlay HTML downloaded!');
+});
+
+// ═══════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════
+applyCanvasSize();
+renderLayersPanel();
+</script>
+</body>
+</html>
