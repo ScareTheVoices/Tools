@@ -69,7 +69,6 @@
 				linear-gradient(115deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08)),
 				radial-gradient(circle at 85% 0%, rgba(207, 144, 218, 0.34), transparent 35%);
 			box-shadow: var(--shadow);
-			backdrop-filter: blur(4px);
 			position: relative;
 			overflow: hidden;
 		}
@@ -271,6 +270,7 @@
 			display: grid;
 			grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
 			gap: 16px;
+			contain: layout paint;
 		}
 
 		.card {
@@ -278,16 +278,29 @@
 			border: 1px solid var(--line);
 			background: var(--card);
 			padding: 14px;
-			box-shadow: 0 8px 18px rgba(4, 0, 16, 0.35);
+			box-shadow: 0 4px 10px rgba(4, 0, 16, 0.24);
 			display: flex;
 			flex-direction: column;
 			gap: 10px;
 			transition: transform 160ms ease, box-shadow 160ms ease;
+			content-visibility: auto;
+			contain-intrinsic-size: 220px;
 		}
 
 		.card:hover {
 			transform: translateY(-2px);
-			box-shadow: 0 12px 20px rgba(4, 0, 16, 0.45);
+			box-shadow: 0 8px 14px rgba(4, 0, 16, 0.32);
+		}
+
+		.more-wrap {
+			margin-top: 16px;
+			display: flex;
+			justify-content: center;
+		}
+
+		.more-btn {
+			width: auto;
+			min-width: 190px;
 		}
 
 		.card h3 {
@@ -419,6 +432,9 @@
 		</section>
 
 		<section id="cardsContainer" class="grid" aria-live="polite"></section>
+		<div class="more-wrap" id="moreWrap" hidden>
+			<button class="button more-btn" id="loadMoreBtn" type="button">Load More Tools</button>
+		</div>
 		<section id="emptyState" class="empty" hidden>No tools match your current filters.</section>
 	</main>
 
@@ -429,6 +445,7 @@
 		const repoUrl = `https://github.com/${repoOwner}/${repoName}`;
 		const pagesBaseUrl = `https://${repoOwner.toLowerCase()}.github.io/${repoName}`;
 		const lastOpenedStorageKey = `${repoOwner}_${repoName}_lastOpenedTool`;
+		const renderPageSize = 120;
 
 		const state = {
 			files: [],
@@ -436,7 +453,8 @@
 			selectedType: "all",
 			search: "",
 			sort: "name",
-			repoData: null
+			repoData: null,
+			renderLimit: renderPageSize
 		};
 
 		const extensionToType = {
@@ -475,6 +493,8 @@
 		const sortSelect = document.getElementById("sortSelect");
 		const refreshBtn = document.getElementById("refreshBtn");
 		const cardsContainer = document.getElementById("cardsContainer");
+		const moreWrap = document.getElementById("moreWrap");
+		const loadMoreBtn = document.getElementById("loadMoreBtn");
 		const emptyState = document.getElementById("emptyState");
 		const statusLine = document.getElementById("statusLine");
 		const metaRow = document.getElementById("metaRow");
@@ -578,6 +598,7 @@
 
 			result = sortFiles(result);
 			state.filtered = result;
+			state.renderLimit = Math.min(renderPageSize, state.filtered.length);
 			renderCards();
 			updateShowingPill();
 		}
@@ -592,8 +613,9 @@
 
 			emptyState.hidden = true;
 			const fragment = document.createDocumentFragment();
+			const visibleFiles = state.filtered.slice(0, state.renderLimit);
 
-			state.filtered.forEach((file) => {
+			visibleFiles.forEach((file) => {
 				const card = document.createElement("article");
 				card.className = "card";
 
@@ -620,13 +642,20 @@
 			});
 
 			cardsContainer.appendChild(fragment);
+			updateLoadMoreVisibility();
+		}
+
+		function updateLoadMoreVisibility() {
+			const hasMore = state.filtered.length > state.renderLimit;
+			moreWrap.hidden = !hasMore;
+			if (hasMore) {
+				const remaining = state.filtered.length - state.renderLimit;
+				loadMoreBtn.textContent = `Load More Tools (${remaining} remaining)`;
+			}
 		}
 
 		function updateShowingPill() {
-			const showingPill = document.getElementById("showingPill");
-			if (showingPill) {
-				showingPill.textContent = `Showing: ${state.filtered.length}`;
-			}
+			return;
 		}
 
 		function updateMeta(repoData) {
@@ -639,21 +668,15 @@
 			const pills = [];
 			if (repoData) {
 				const updated = repoData.pushed_at ? new Date(repoData.pushed_at).toLocaleDateString() : "Unknown";
-				pills.push(`${repoOwner}/${repoName}/${catalogRoot}`);
-				pills.push(`Default branch: ${repoData.default_branch}`);
 				pills.push(`Last push: ${updated}`);
 			}
 
 			pills.push(`Files indexed: ${total}`);
-			pills.push(`Showing: ${showing}`);
 			pills.push(`Total size: ${humanFileSize(totalSize)}`);
 
 			for (const text of pills) {
 				const pill = document.createElement("span");
 				pill.className = "meta-pill";
-				if (text.startsWith("Showing:")) {
-					pill.id = "showingPill";
-				}
 				pill.textContent = text;
 				metaRow.appendChild(pill);
 			}
@@ -870,6 +893,11 @@
 		});
 
 		refreshBtn.addEventListener("click", loadCatalog);
+
+		loadMoreBtn.addEventListener("click", () => {
+			state.renderLimit = Math.min(state.renderLimit + renderPageSize, state.filtered.length);
+			renderCards();
+		});
 
 		loadCatalog();
 	</script>
