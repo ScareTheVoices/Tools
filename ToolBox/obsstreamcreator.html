@@ -311,6 +311,25 @@
       flex: none;
     }
 
+    .anchor-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      width: 100%;
+    }
+    .anchor-btn {
+      padding: 6px 4px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 0.72rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: filter .12s;
+    }
+    .anchor-btn:hover { filter: brightness(1.12); }
+
     /* ── LAYERS PANEL at bottom of left panel ── */
     .layers-panel {
       flex: 1;
@@ -2283,6 +2302,20 @@ function renderPropsPanel() {
     <div class="prop-row"><label>W</label><input id="prop-w" type="number" value="${data.w}" /></div>
     <div class="prop-row"><label>H</label><input id="prop-h" type="number" value="${data.h}" /></div>
     <div class="prop-row"><label>Z-Index</label><input id="prop-z" type="number" value="${data.zIndex}" /></div>
+    <div class="prop-row" style="align-items:flex-start">
+      <label>Align</label>
+      <div class="anchor-grid">
+        <button class="anchor-btn" type="button" data-anchor-pos="top-left">Top Left</button>
+        <button class="anchor-btn" type="button" data-anchor-pos="top-center">Top Center</button>
+        <button class="anchor-btn" type="button" data-anchor-pos="top-right">Top Right</button>
+        <button class="anchor-btn" type="button" data-anchor-pos="center-left">Center Left</button>
+        <button class="anchor-btn" type="button" data-anchor-pos="center">Center</button>
+        <button class="anchor-btn" type="button" data-anchor-pos="center-right">Center Right</button>
+        <button class="anchor-btn" type="button" data-anchor-pos="bottom-left">Bottom Left</button>
+        <button class="anchor-btn" type="button" data-anchor-pos="bottom-center">Bottom Center</button>
+        <button class="anchor-btn" type="button" data-anchor-pos="bottom-right">Bottom Right</button>
+      </div>
+    </div>
   </div>`;
 
   if (data.type === 'text') {
@@ -2475,6 +2508,54 @@ function renderPropsPanel() {
 }
 
 function bindPropsEvents(data) {
+  const alignToAnchor = (anchor) => {
+    const maxX = Math.max(0, canvasW - data.w);
+    const maxY = Math.max(0, canvasH - data.h);
+
+    const centerX = Math.round((canvasW - data.w) / 2);
+    const centerY = Math.round((canvasH - data.h) / 2);
+
+    let x = data.x;
+    let y = data.y;
+
+    switch (anchor) {
+      case 'top-left':
+        x = 0; y = 0;
+        break;
+      case 'top-center':
+        x = centerX; y = 0;
+        break;
+      case 'top-right':
+        x = maxX; y = 0;
+        break;
+      case 'center-left':
+        x = 0; y = centerY;
+        break;
+      case 'center':
+        x = centerX; y = centerY;
+        break;
+      case 'center-right':
+        x = maxX; y = centerY;
+        break;
+      case 'bottom-left':
+        x = 0; y = maxY;
+        break;
+      case 'bottom-center':
+        x = centerX; y = maxY;
+        break;
+      case 'bottom-right':
+        x = maxX; y = maxY;
+        break;
+      default:
+        return;
+    }
+
+    data.x = Math.max(0, Math.min(maxX, x));
+    data.y = Math.max(0, Math.min(maxY, y));
+    refreshElement(data.id);
+    syncPositionProps(data);
+  };
+
   const bind = (id, prop, transform) => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -2496,6 +2577,9 @@ function bindPropsEvents(data) {
   bind('prop-w',       'w',       int);
   bind('prop-h',       'h',       int);
   bind('prop-z',       'zIndex',  int);
+  document.querySelectorAll('[data-anchor-pos]').forEach(btn => {
+    btn.addEventListener('click', () => alignToAnchor(btn.dataset.anchorPos));
+  });
 
   // Text
   bind('pt-text',       'text');
