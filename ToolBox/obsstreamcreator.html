@@ -2851,22 +2851,9 @@ document.getElementById('file-import-html').addEventListener('change', e => {
 // ═══════════════════════════════════════════════════════════
 function buildExportHTML() {
   let inner = '';
-  const cutouts = [];
   const projectData = JSON.stringify({ canvasW, canvasH, elements, groups }).replace(/</g, '\\u003c');
   [...elements].sort((a,b) => a.zIndex - b.zIndex).forEach(data => {
     if (!data.visible) return;
-
-    // Transparent box acts as a cutout in export, not a rendered shape.
-    if (data.type === 'box' && data.fillTransparent) {
-      cutouts.push({
-        x: data.x,
-        y: data.y,
-        w: data.w,
-        h: data.h,
-        r: data.borderRadius || 0,
-      });
-      return;
-    }
 
     let elStyle = [
       'position:absolute',
@@ -2974,7 +2961,13 @@ function buildExportHTML() {
         break;
       }
       case 'box':
-        content = `<div style="width:100%;height:100%;background:${data.fillTransparent ? 'transparent' : data.bgColor};border:${data.borderWidth}px solid ${data.borderColor};border-radius:${data.borderRadius}px"></div>`;
+        if (data.fillTransparent) {
+          // Erase only what is below this z-layer, allowing higher layers to render above.
+          content = `<div style="position:absolute;inset:0;background:#000;border-radius:${data.borderRadius}px;mix-blend-mode:destination-out"></div>
+          ${data.borderWidth > 0 ? `<div style="position:absolute;inset:0;border:${data.borderWidth}px solid ${data.borderColor};border-radius:${data.borderRadius}px;box-sizing:border-box"></div>` : ''}`;
+        } else {
+          content = `<div style="width:100%;height:100%;background:${data.bgColor};border:${data.borderWidth}px solid ${data.borderColor};border-radius:${data.borderRadius}px"></div>`;
+        }
         break;
       case 'utility': {
         const safeMode = 'chat';
@@ -3085,27 +3078,6 @@ function buildExportHTML() {
     inner += `<div style="${elStyle}">\n  ${content}\n</div>\n`;
   });
 
-  let maskCss = '';
-  if (cutouts.length) {
-    const maskSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasW}" height="${canvasH}">`
-      + `<rect x="0" y="0" width="${canvasW}" height="${canvasH}" fill="white"/>`
-      + cutouts.map(c => `<rect x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" rx="${c.r}" ry="${c.r}" fill="black"/>`).join('')
-      + `</svg>`;
-    const maskUrl = `data:image/svg+xml;utf8,${encodeURIComponent(maskSvg)}`;
-    maskCss = [
-      `-webkit-mask-image:url('${maskUrl}')`,
-      `mask-image:url('${maskUrl}')`,
-      `-webkit-mask-repeat:no-repeat`,
-      `mask-repeat:no-repeat`,
-      `-webkit-mask-size:100% 100%`,
-      `mask-size:100% 100%`,
-      `-webkit-mask-position:0 0`,
-      `mask-position:0 0`,
-      `-webkit-mask-mode:luminance`,
-      `mask-mode:luminance`,
-    ].join(';') + ';';
-  }
-
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3113,7 +3085,7 @@ function buildExportHTML() {
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{width:${canvasW}px;height:${canvasH}px;overflow:hidden;background:transparent}
-    #overlay-root{position:relative;width:${canvasW}px;height:${canvasH}px;${maskCss}}
+    #overlay-root{position:relative;width:${canvasW}px;height:${canvasH}px;isolation:isolate}
     @keyframes float-bob {
       0%, 100% { transform: translate(0, 0); }
       50% { transform: translate(var(--float-x, 0px), var(--float-y, -8px)); }
