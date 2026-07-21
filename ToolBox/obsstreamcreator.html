@@ -311,6 +311,52 @@
       flex: none;
     }
 
+    .angle-dial-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+    .angle-dial {
+      --dial-angle: 315deg;
+      position: relative;
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: radial-gradient(circle at 30% 30%, #2a2e44, #171a25);
+      cursor: grab;
+      flex: none;
+    }
+    .angle-dial:active { cursor: grabbing; }
+    .angle-dial::before {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #cbd5e1;
+      transform: translate(-50%, -50%);
+      opacity: .9;
+    }
+    .angle-dial-pointer {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 2px;
+      height: 16px;
+      border-radius: 2px;
+      background: var(--accent2);
+      transform-origin: 50% calc(100% - 2px);
+      transform: translate(-50%, -100%) rotate(var(--dial-angle));
+      pointer-events: none;
+      box-shadow: 0 0 6px #00000066;
+    }
+
     .anchor-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -621,6 +667,18 @@ function animationStyle(data, scale = 1) {
   const dist = Math.max(2, Math.round(10 * Math.max(0.1, scale)));
   const vec = floatVector(data.floatDirection, dist);
   return `animation:float-bob ${speed}s ease-in-out infinite;--float-x:${vec.x}px;--float-y:${vec.y}px;will-change:transform;`;
+}
+
+function layerShadowFilter(data, scale = 1) {
+  if (!data || !data.layerShadow) return '';
+  const angleDeg = ((parseFloat(data.layerShadowAngle || 315) % 360) + 360) % 360;
+  const angle = angleDeg * (Math.PI / 180);
+  const dist = Math.max(0, parseFloat(data.layerShadowDistance || 8)) * Math.max(0.1, scale);
+  const blur = Math.max(0, parseFloat(data.layerShadowBlur || 12)) * Math.max(0.1, scale);
+  const dx = Math.round(Math.cos(angle) * dist * 10) / 10;
+  const dy = Math.round(Math.sin(angle) * dist * 10) / 10;
+  const color = String(data.layerShadowColor || 'rgba(0,0,0,0.45)');
+  return `drop-shadow(${dx}px ${dy}px ${blur}px ${color})`;
 }
 
 // ─── GROUP HELPERS ───────────────────────────────────────
@@ -1435,13 +1493,14 @@ function renderUtilityItemsHtml(data, scale) {
 function renderUtilityWidget(data, scale) {
   data.utilMode = 'chat';
   const mode = 'chat';
+  const showHeader = data.utilShowHeader !== false;
   const title = `Twitch ${escHtml(mode.toUpperCase())}`;
   const statusSuffix = ` ${data.utilConnected ? '• connected' : '• offline'}`;
   const reactionOverlay = renderUtilityReactionHtml(data, scale);
   return `<div style="width:100%;height:100%;padding:${Math.max(4, Math.round(6 * scale))}px;background:${data.bgColor};border-radius:${data.borderRadius}px;overflow:hidden;display:flex;flex-direction:column;gap:${Math.max(3, Math.round(4 * scale))}px">
-    <div style="font-size:${Math.max(10, Math.round((data.fontSize || 16) * scale * 0.85))}px;opacity:.8;font-family:${data.fontFamily};color:${data.color};font-weight:700;letter-spacing:.04em">
+    ${showHeader ? `<div style="font-size:${Math.max(10, Math.round((data.fontSize || 16) * scale * 0.85))}px;opacity:.8;font-family:${data.fontFamily};color:${data.color};font-weight:700;letter-spacing:.04em">
       ${title}${statusSuffix}
-    </div>
+    </div>` : ''}
     <div data-ut-list="${data.id}" style="font-size:${Math.max(10, Math.round((data.fontSize || 16) * scale))}px;font-family:${data.fontFamily};color:${data.color};overflow:hidden;flex:1;min-height:0;position:relative">
       ${renderUtilityItemsHtml(data, scale)}
     </div>
@@ -1559,6 +1618,11 @@ function defaultData(type) {
     id: nextId++, type,
     x: 40, y: 40, w: 300, h: 60,
     visible: true, opacity: 1, zIndex: elements.length + 1,
+    layerShadow: false,
+    layerShadowAngle: 315,
+    layerShadowDistance: 8,
+    layerShadowBlur: 12,
+    layerShadowColor: 'rgba(0,0,0,0.45)',
     name: type.charAt(0).toUpperCase() + type.slice(1) + ' ' + (nextId - 1),
   };
   switch (type) {
@@ -1603,6 +1667,7 @@ function defaultData(type) {
     case 'utility':
       return { ...base, w: 420, h: 180,
         utilMode: 'chat', channel: '', username: '', oauthToken: '',
+        utilShowHeader: true,
         utilStreams: [{ channel: '', color: '#a78bfa' }],
         utilCustomColors: false,
         utilStyle: 'normal',
@@ -1748,6 +1813,7 @@ function createElement(data) {
   el.style.height  = (data.h * zoom) + 'px';
   el.style.zIndex  = data.zIndex;
   el.style.opacity = data.opacity;
+  el.style.filter  = layerShadowFilter(data, zoom);
   el.style.display = data.visible ? '' : 'none';
   applyWrapperAnimation(el, data);
   if (data.type === 'image') {
@@ -1815,6 +1881,7 @@ function refreshElement(id) {
   el.style.height  = (data.h * zoom) + 'px';
   el.style.zIndex  = data.zIndex;
   el.style.opacity = data.opacity;
+  el.style.filter  = layerShadowFilter(data, zoom);
   el.style.display = data.visible ? '' : 'none';
   applyWrapperAnimation(el, data);
 
@@ -2294,6 +2361,20 @@ function renderPropsPanel() {
     <div class="prop-group-title">General</div>
     <div class="prop-row"><label>Name</label><input id="prop-name" type="text" value="${escHtml(data.name)}" /></div>
     <div class="prop-row"><label>Opacity</label><input id="prop-opacity" type="range" min="0" max="1" step=".05" value="${data.opacity}" /></div>
+    <div class="prop-row"><label>Layer Shadow</label><input id="prop-layer-shadow" type="checkbox" ${data.layerShadow ? 'checked' : ''} /></div>
+    ${data.layerShadow ? `
+    <div class="prop-row"><label>Angle</label>
+      <div class="angle-dial-wrap">
+        <div id="prop-shadow-dial" class="angle-dial" style="--dial-angle:${Math.round(data.layerShadowAngle || 315)}deg">
+          <div class="angle-dial-pointer"></div>
+        </div>
+        <input id="prop-shadow-angle" type="number" min="0" max="360" step="1" value="${Math.round(data.layerShadowAngle || 315)}" />
+      </div>
+    </div>
+    <div class="prop-row"><label>Distance</label><input id="prop-shadow-distance" type="number" min="0" max="200" step="1" value="${data.layerShadowDistance ?? 8}" /></div>
+    <div class="prop-row"><label>Blur</label><input id="prop-shadow-blur" type="number" min="0" max="200" step="1" value="${data.layerShadowBlur ?? 12}" /></div>
+    <div class="prop-row"><label>Color</label><input id="prop-shadow-color" type="text" value="${escHtml(data.layerShadowColor || 'rgba(0,0,0,0.45)')}" placeholder="rgba(0,0,0,0.45)" /></div>
+    ` : ''}
   </div>
   <div class="prop-group">
     <div class="prop-group-title">Position &amp; Size</div>
@@ -2325,7 +2406,7 @@ function renderPropsPanel() {
       <div class="prop-row"><label>Content</label><textarea id="pt-text">${escHtml(data.text)}</textarea></div>
       <div class="prop-row"><label>Font</label>
         <select id="pt-font">
-          ${['Arial','Verdana','Georgia','monospace','Impact','Trebuchet MS','Comic Sans MS'].map(f =>
+          ${['Arial','Verdana','Georgia','monospace','Impact','Trebuchet MS','Comic Sans MS','Segoe UI','Tahoma','Times New Roman'].map(f =>
             `<option${data.fontFamily===f?' selected':''}>${f}</option>`).join('')}
         </select>
       </div>
@@ -2370,7 +2451,7 @@ function renderPropsPanel() {
       <div class="prop-group-title">Clock</div>
       <div class="prop-row"><label>Font</label>
         <select id="ck-font">
-          ${['monospace','Arial','Verdana','Impact'].map(f => `<option${data.fontFamily===f?' selected':''}>${f}</option>`).join('')}
+          ${['Arial','Verdana','Georgia','monospace','Impact','Trebuchet MS','Comic Sans MS','Segoe UI','Tahoma','Times New Roman'].map(f => `<option${data.fontFamily===f?' selected':''}>${f}</option>`).join('')}
         </select>
       </div>
       <div class="prop-row"><label>Size</label><input id="ck-size" type="number" value="${data.fontSize}" min="8" max="200" /></div>
@@ -2391,6 +2472,12 @@ function renderPropsPanel() {
       <div class="prop-group-title">Countdown</div>
       <div class="prop-row"><label>Label</label><input id="cd-label" type="text" value="${escHtml(data.label)}" /></div>
       <div class="prop-row"><label>Target Time</label><input id="cd-target" type="datetime-local" value="${dtStr}" /></div>
+      <div class="prop-row"><label>Font</label>
+        <select id="cd-font">
+          ${['monospace','Arial','Verdana','Georgia','Impact','Trebuchet MS','Comic Sans MS','Segoe UI','Tahoma','Times New Roman'].map(f =>
+            `<option${data.fontFamily===f?' selected':''}>${f}</option>`).join('')}
+        </select>
+      </div>
       <div class="prop-row"><label>Size</label><input id="cd-size" type="number" value="${data.fontSize}" min="8" max="200" /></div>
       <div class="prop-row"><label>Color</label><input id="cd-color" type="color" value="${data.color}" /></div>
       <div class="prop-row"><label>BG Color</label><input id="cd-bg" type="text" value="${data.bgColor}" placeholder="transparent" /></div>
@@ -2450,6 +2537,12 @@ function renderPropsPanel() {
       <div class="prop-group-title">Ticker</div>
       <div class="prop-row"><label>Messages</label><textarea id="tk-msgs">${data.messages.map(escHtml).join('\n')}</textarea></div>
       <div class="prop-row"><label>Separator</label><input id="tk-sep" type="text" value="${escHtml(data.separator)}" /></div>
+      <div class="prop-row"><label>Font</label>
+        <select id="tk-font">
+          ${['Arial','Verdana','Georgia','monospace','Impact','Trebuchet MS','Comic Sans MS','Segoe UI','Tahoma','Times New Roman'].map(f =>
+            `<option${data.fontFamily===f?' selected':''}>${f}</option>`).join('')}
+        </select>
+      </div>
       <div class="prop-row"><label>Font Size</label><input id="tk-size" type="number" value="${data.fontSize}" min="8" max="120" /></div>
       <div class="prop-row"><label>Color</label><input id="tk-color" type="color" value="${data.color}" /></div>
       <div class="prop-row"><label>BG Color</label><input id="tk-bg" type="text" value="${data.bgColor}" placeholder="transparent" /></div>
@@ -2482,13 +2575,19 @@ function renderPropsPanel() {
           <option value="text-chat"${data.utilStyle==='text-chat'?' selected':''}>Text Chat</option>
         </select>
       </div>
+      <div class="prop-row"><label>Show Header</label><input id="ut-show-header" type="checkbox" ${data.utilShowHeader !== false ? 'checked' : ''} /></div>
       <div class="prop-row"><label>Custom Colors</label><input id="ut-custom-colors" type="checkbox" ${data.utilCustomColors ? 'checked' : ''} /></div>
       ${streams.map((stream, idx) => `<div class="prop-row"><label>Streamer ${idx + 1}</label><input id="ut-stream-channel-${idx}" type="text" value="${escHtml(stream.channel || '')}" placeholder="channel_name" /><input id="ut-stream-color-${idx}" type="color" value="${utilityColorToPickerValue(stream.color || '#a78bfa')}" title="${escHtml(stream.color || '#a78bfa')}" ${data.utilCustomColors ? '' : 'disabled'} /></div>`).join('')}
       <div class="prop-row"><button class="btn btn-secondary" id="ut-stream-add" style="flex:1">+</button><button class="btn btn-secondary" id="ut-stream-remove" style="flex:1">-</button></div>
       <div class="prop-row"><label>Username</label><input id="ut-user" type="text" value="${escHtml(data.username || '')}" placeholder="bot_or_user" /></div>
       <div class="prop-row"><label>OAuth</label><input id="ut-token" type="password" value="${escHtml(data.oauthToken || '')}" placeholder="oauth:xxxx" /></div>
       <div class="prop-row"><label>Max Lines</label><input id="ut-max" type="number" value="${data.maxItems || 6}" min="1" max="30" /></div>
-      <div class="prop-row"><label>Font</label><input id="ut-font" type="text" value="${escHtml(data.fontFamily || 'Arial')}" /></div>
+      <div class="prop-row"><label>Font</label>
+        <select id="ut-font">
+          ${['Arial','Verdana','Georgia','monospace','Impact','Trebuchet MS','Comic Sans MS','Segoe UI','Tahoma','Times New Roman'].map(f =>
+            `<option${(data.fontFamily || 'Arial')===f?' selected':''}>${f}</option>`).join('')}
+        </select>
+      </div>
       <div class="prop-row"><label>Font Size</label><input id="ut-size" type="number" value="${data.fontSize || 16}" min="8" max="64" /></div>
       <div class="prop-row"><label>Text Color</label><input id="ut-color" type="color" value="${data.color || '#ffffff'}" /></div>
       <div class="prop-row"><label>BG Color</label><input id="ut-bg" type="text" value="${escHtml(data.bgColor || 'rgba(0,0,0,0.65)')}" /></div>
@@ -2572,11 +2671,57 @@ function bindPropsEvents(data) {
   // General
   bind('prop-name',    'name');
   bind('prop-opacity', 'opacity', num);
+  bind('prop-shadow-distance', 'layerShadowDistance', num);
+  bind('prop-shadow-blur', 'layerShadowBlur', num);
+  bind('prop-shadow-color', 'layerShadowColor');
   bind('prop-x',       'x',       int);
   bind('prop-y',       'y',       int);
   bind('prop-w',       'w',       int);
   bind('prop-h',       'h',       int);
   bind('prop-z',       'zIndex',  int);
+  const layerShadowToggle = document.getElementById('prop-layer-shadow');
+  if (layerShadowToggle) {
+    layerShadowToggle.addEventListener('change', () => {
+      data.layerShadow = layerShadowToggle.checked;
+      refreshElement(data.id);
+      renderPropsPanel();
+    });
+  }
+  const shadowAngleInput = document.getElementById('prop-shadow-angle');
+  const shadowDial = document.getElementById('prop-shadow-dial');
+  const setShadowAngle = raw => {
+    let angle = parseFloat(raw);
+    if (!Number.isFinite(angle)) angle = 0;
+    angle = ((angle % 360) + 360) % 360;
+    data.layerShadowAngle = angle;
+    if (shadowAngleInput) shadowAngleInput.value = String(Math.round(angle));
+    if (shadowDial) shadowDial.style.setProperty('--dial-angle', `${angle}deg`);
+    refreshElement(data.id);
+  };
+  if (shadowAngleInput) {
+    shadowAngleInput.addEventListener('input', () => setShadowAngle(shadowAngleInput.value));
+  }
+  if (shadowDial) {
+    const angleFromMouse = ev => {
+      const rect = shadowDial.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const rad = Math.atan2(ev.clientY - cy, ev.clientX - cx);
+      const deg = (rad * 180 / Math.PI + 360) % 360;
+      return Math.round(deg);
+    };
+    shadowDial.addEventListener('mousedown', ev => {
+      ev.preventDefault();
+      setShadowAngle(angleFromMouse(ev));
+      const onMove = mv => setShadowAngle(angleFromMouse(mv));
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
   document.querySelectorAll('[data-anchor-pos]').forEach(btn => {
     btn.addEventListener('click', () => alignToAnchor(btn.dataset.anchorPos));
   });
@@ -2620,6 +2765,7 @@ function bindPropsEvents(data) {
 
   // Countdown
   bind('cd-label', 'label');
+  bind('cd-font',  'fontFamily');
   bind('cd-size',  'fontSize', int);
   bind('cd-color', 'color');
   bind('cd-bg',    'bgColor');
@@ -2667,6 +2813,7 @@ function bindPropsEvents(data) {
 
   // Ticker
   bind('tk-sep',   'separator');
+  bind('tk-font',  'fontFamily');
   bind('tk-size',  'fontSize', int);
   bind('tk-color', 'color');
   bind('tk-bg',    'bgColor');
@@ -2687,6 +2834,7 @@ function bindPropsEvents(data) {
   // Utility
   data.utilMode = 'chat';
   bind('ut-style', 'utilStyle');
+  bind('ut-show-header', 'utilShowHeader');
   const customColorsToggle = document.getElementById('ut-custom-colors');
   if (customColorsToggle) {
     customColorsToggle.addEventListener('change', () => {
@@ -2861,6 +3009,7 @@ function buildExportHTML() {
       `width:${data.w}px`, `height:${data.h}px`,
       `z-index:${data.zIndex}`,
       `opacity:${data.opacity}`,
+      layerShadowFilter(data, 1) ? `filter:${layerShadowFilter(data, 1)}` : '',
       effectiveAnimStyle(data, 1),
     ].filter(Boolean).join(';');
 
@@ -2971,6 +3120,7 @@ function buildExportHTML() {
         break;
       case 'utility': {
         const safeMode = 'chat';
+        const safeShowHeader = data.utilShowHeader !== false;
         const safeStyle = String(data.utilStyle || 'normal');
         const safeCustomColors = !!data.utilCustomColors;
         const safeUser = String(data.username || '').replace(/'/g, "\\'");
@@ -2983,7 +3133,7 @@ function buildExportHTML() {
         const safeMax = Math.max(1, parseInt(data.maxItems || 6));
         const safeRadius = parseInt(data.borderRadius || 8);
           content = `<div id="ut_${data.id}" style="width:100%;height:100%;padding:6px;background:${safeBg};border-radius:${safeRadius}px;overflow:hidden;display:flex;flex-direction:column;gap:4px">
-        <div id="ut_head_${data.id}" style="font-size:${Math.max(10, Math.round(safeSize * 0.85))}px;opacity:.8;font-family:${safeFont};color:${safeColor};font-weight:700;letter-spacing:.04em">Twitch ${safeMode.toUpperCase()}</div>
+        ${safeShowHeader ? `<div id="ut_head_${data.id}" style="font-size:${Math.max(10, Math.round(safeSize * 0.85))}px;opacity:.8;font-family:${safeFont};color:${safeColor};font-weight:700;letter-spacing:.04em">Twitch ${safeMode.toUpperCase()}</div>` : ''}
   <div id="ut_list_${data.id}" style="font-size:${safeSize}px;font-family:${safeFont};color:${safeColor};overflow:hidden;flex:1;min-height:0;position:relative">Connecting...</div>
 </div>
 <script>
