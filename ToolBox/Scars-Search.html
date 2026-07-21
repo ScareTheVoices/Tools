@@ -225,6 +225,13 @@
       font-weight: 600;
     }
 
+    .viewer-open[disabled],
+    .scaretube-open[disabled] {
+      opacity: 0.55;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
     .results-pane {
       display: none;
       width: min(1320px, calc(100% - 36px));
@@ -598,8 +605,9 @@
     <section id="viewer" class="viewer" aria-label="No iframe browsing panel">
       <h3 class="viewer-title">No-iframe mode is active</h3>
       <p id="viewerLink" class="viewer-link"></p>
-      <p class="viewer-note">For direct websites, Scars Search now opens pages in a new tab instead of embedding them.</p>
-      <a id="viewerOpen" class="viewer-open" href="#" target="_blank" rel="noopener noreferrer">Open Site</a>
+        <p class="viewer-note">Direct site loading is disabled in strict single-page mode.</p>
+        <p class="viewer-locked">External navigation is locked. Use Scars results and ScareTube inside this page only.</p>
+        <button id="viewerOpen" class="viewer-open" type="button" disabled>Open Site Disabled</button>
     </section>
 
     <section id="resultsPane" class="results-pane" aria-label="Custom search results">
@@ -632,10 +640,10 @@
         <h3 id="scareTubeTitle" class="scaretube-title"></h3>
         <p id="scareTubeLink" class="scaretube-link"></p>
         <div class="scaretube-actions">
-          <a id="scareTubeOpen" class="scaretube-open" href="#" target="_blank" rel="noopener noreferrer">Open Original Video</a>
+           <button id="scareTubeOpen" class="scaretube-open" type="button" disabled>External Open Disabled</button>
         </div>
         <div class="scaretube-tip">
-          If playback is blocked, use "Open Original Video".
+           If playback is blocked for a video, try another result in ScareTube.
         </div>
       </div>
 
@@ -736,10 +744,8 @@
       resultsSub.textContent = "";
       scareTubeTitle.textContent = "";
       scareTubeLink.textContent = "";
-      scareTubeOpen.href = "#";
       scareTubePlayer.src = "about:blank";
       viewerLink.textContent = "";
-      viewerOpen.href = "#";
       viewer.classList.remove("hidden");
       currentSearchQuery = "";
     }
@@ -766,7 +772,6 @@
       scareTubePlayer.src = "https://" + getVideoEmbedHost() + "/embed/" + encodeURIComponent(videoId) + "?autoplay=1&rel=0&modestbranding=1&playsinline=1";
       scareTubeTitle.textContent = title || "ScareTube Video";
       scareTubeLink.textContent = sourceUrl || cleanWatchUrl;
-      scareTubeOpen.href = cleanWatchUrl;
       hideEmbedHint();
     }
 
@@ -1196,7 +1201,6 @@
       scareTubePane.classList.remove("show");
       viewer.classList.remove("hidden");
       viewerLink.textContent = target;
-      viewerOpen.href = target;
       showEmbedHint();
     }
 
