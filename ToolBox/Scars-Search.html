@@ -1,0 +1,1252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <title>Scars Search</title>
+  <style>
+    :root {
+      --bg: #202124;
+      --bg-soft: #4f545c;
+      --text: #f4f6f8;
+      --muted: #aab1ba;
+      --accent: #75a9f8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .home {
+      min-height: 100dvh;
+      display: grid;
+      grid-template-rows: 1fr;
+      padding: 18px 22px;
+    }
+
+    .home-inner {
+      width: min(980px, 100%);
+      text-align: center;
+      margin: 0 auto;
+      align-self: center;
+      transform: translateY(-10vh);
+    }
+
+    .logo {
+      margin: 0 0 28px;
+      font-size: clamp(3.1rem, 8.2vw, 6.4rem);
+      letter-spacing: -0.05em;
+      font-weight: 600;
+      color: #f8f9fa;
+      text-shadow: 0 12px 38px rgba(0, 0, 0, 0.55);
+    }
+
+    .search-form {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      background: var(--bg-soft);
+      border-radius: 999px;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.36);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 6px;
+    }
+
+    .query {
+      width: 100%;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--text);
+      font-size: 2.1rem;
+      padding: 11px 20px;
+      letter-spacing: 0.2px;
+    }
+
+    .query::placeholder {
+      color: #c4c9d0;
+      opacity: 0.95;
+    }
+
+    .go {
+      border: 0;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #0f223f;
+      height: 56px;
+      min-width: 56px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 1.3rem;
+    }
+
+    .browse {
+      display: none;
+      width: 100%;
+      height: 100dvh;
+      background: #111;
+    }
+
+    .browse-drawer {
+      position: fixed;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      width: min(1200px, calc(100% - 24px));
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 8px;
+      padding: 8px;
+      border-radius: 999px;
+      background: rgba(43, 47, 52, 0.88);
+      backdrop-filter: blur(6px);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateX(-50%) translateY(120%);
+      transition: transform 180ms ease, opacity 180ms ease;
+    }
+
+    .drawer-toggle {
+      position: fixed;
+      left: 50%;
+      bottom: 14px;
+      transform: translateX(-50%);
+      z-index: 11;
+      width: 54px;
+      height: 34px;
+      border: 0;
+      border-radius: 999px;
+      background: rgba(43, 47, 52, 0.9);
+      color: #dce2ea;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: transform 180ms ease, bottom 180ms ease, opacity 180ms ease;
+    }
+
+    body.mode-browse.drawer-open .browse-drawer {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    body.mode-browse.drawer-open .drawer-toggle {
+      bottom: 90px;
+      transform: translateX(-50%) rotate(180deg);
+    }
+
+    .top-btn,
+    .top-go {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 14px;
+      cursor: pointer;
+      background: #40454d;
+      color: var(--text);
+      font-size: 0.92rem;
+    }
+
+    .top-go {
+      background: var(--accent);
+      color: #0f223f;
+      font-weight: 700;
+      min-width: 46px;
+    }
+
+    .top-input {
+      width: 100%;
+      border: 0;
+      outline: 0;
+      border-radius: 999px;
+      background: #4a4f58;
+      color: var(--text);
+      padding: 10px 14px;
+      font-size: 0.95rem;
+    }
+
+    .viewer {
+      width: min(1100px, calc(100% - 36px));
+      margin: 92px auto 26px;
+      padding: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 16px;
+      background: rgba(26, 30, 36, 0.96);
+      display: grid;
+      gap: 12px;
+      color: #e7ecf3;
+    }
+
+    .viewer.hidden {
+      display: none;
+    }
+
+    .viewer-title {
+      margin: 0;
+      font-size: 1.08rem;
+      color: #f3f7fb;
+      font-weight: 600;
+    }
+
+    .viewer-link {
+      color: #9fc6a8;
+      font-size: 0.88rem;
+      word-break: break-all;
+    }
+
+    .viewer-note {
+      margin: 0;
+      color: #d0d8e3;
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+
+    .viewer-open {
+      width: fit-content;
+      text-decoration: none;
+      border: 1px solid rgba(117, 169, 248, 0.8);
+      background: rgba(117, 169, 248, 0.2);
+      color: #eaf2ff;
+      border-radius: 999px;
+      padding: 9px 13px;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+
+    .results-pane {
+      display: none;
+      width: min(1320px, calc(100% - 36px));
+      margin: 86px auto 30px;
+      padding: 0 12px 110px;
+      color: #e7ecf3;
+      grid-template-columns: minmax(0, 1fr) 380px;
+      gap: 24px;
+    }
+
+    .results-pane.show {
+      display: grid;
+    }
+
+    .results-main {
+      min-width: 0;
+    }
+
+    .results-title {
+      margin: 0 0 14px;
+      font-size: 1.25rem;
+      color: #f3f6fa;
+      font-weight: 600;
+    }
+
+    .results-sub {
+      margin: 0 0 14px;
+      color: #9ea8b4;
+      font-size: 0.92rem;
+    }
+
+    .results-tabs {
+      display: flex;
+      gap: 8px;
+      margin: 0 0 14px;
+      flex-wrap: wrap;
+    }
+
+    .results-tab {
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(45, 50, 57, 0.9);
+      color: #d6deea;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 0.88rem;
+      cursor: pointer;
+    }
+
+    .results-tab.active {
+      background: rgba(117, 169, 248, 0.28);
+      border-color: rgba(117, 169, 248, 0.8);
+      color: #f4f8ff;
+    }
+
+    .result-card {
+      width: 100%;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(37, 41, 47, 0.92);
+      color: #e7ecf3;
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin: 0 0 10px;
+      cursor: pointer;
+      text-align: left;
+      display: grid;
+      gap: 7px;
+    }
+
+    .result-card:hover {
+      background: rgba(52, 57, 64, 0.98);
+    }
+
+    .result-card .title {
+      color: #9fc4ff;
+      font-size: 1.04rem;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    .result-card .link {
+      color: #9fc6a8;
+      font-size: 0.82rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .result-card .snippet {
+      color: #d2dae3;
+      font-size: 0.9rem;
+      line-height: 1.35;
+    }
+
+    .result-card.video {
+      grid-template-columns: 220px 1fr;
+      align-items: start;
+      gap: 12px;
+    }
+
+    .video-thumb {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      object-fit: cover;
+      background: #1d2126;
+    }
+
+    .video-meta {
+      min-width: 0;
+      display: grid;
+      gap: 6px;
+    }
+
+    .results-side {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      background: rgba(31, 35, 40, 0.92);
+      padding: 14px;
+      align-self: start;
+      position: sticky;
+      top: 92px;
+    }
+
+    .results-side h3 {
+      margin: 0 0 10px;
+      font-size: 1.06rem;
+      color: #f3f7fb;
+    }
+
+    .results-side p {
+      margin: 0;
+      color: #9ea8b4;
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+
+    .results-empty {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(37, 41, 47, 0.92);
+      color: #d2dae3;
+      border-radius: 14px;
+      padding: 14px;
+      font-size: 0.92rem;
+    }
+
+    .scaretube-pane {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      width: 100%;
+      margin: 0;
+      padding: 84px 18px 24px;
+      color: #e7ecf3;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 20px;
+      background:
+        radial-gradient(1200px 600px at 18% -10%, rgba(150, 28, 28, 0.2), transparent 50%),
+        radial-gradient(900px 500px at 88% 0%, rgba(104, 22, 22, 0.18), transparent 54%),
+        linear-gradient(180deg, #0f1115 0%, #0a0c10 100%);
+      overflow: auto;
+    }
+
+    .scaretube-pane.show {
+      display: grid;
+    }
+
+    .scaretube-player {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      background: #0f1216;
+    }
+
+    .scaretube-shell {
+      display: grid;
+      gap: 10px;
+    }
+
+    .scaretube-title {
+      margin: 12px 0 0;
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #f3f7fb;
+    }
+
+    .scaretube-link {
+      margin: 8px 0 0;
+      color: #9fc6a8;
+      font-size: 0.85rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .scaretube-actions {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .scaretube-open {
+      text-decoration: none;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(39, 44, 51, 0.9);
+      color: #e9eef8;
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      line-height: 1;
+    }
+
+    .scaretube-tip {
+      margin: 10px 0 0;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(20, 24, 30, 0.9);
+      border-radius: 12px;
+      padding: 10px 12px;
+      color: #d0d8e3;
+      font-size: 0.86rem;
+      line-height: 1.38;
+    }
+
+    .scaretube-side {
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      background: rgba(31, 35, 40, 0.92);
+      padding: 14px;
+      align-self: start;
+      position: sticky;
+      top: 92px;
+    }
+
+    .scaretube-side h3 {
+      margin: 0 0 10px;
+      font-size: 1.06rem;
+      color: #f3f7fb;
+    }
+
+    .scaretube-side p {
+      margin: 0;
+      color: #9ea8b4;
+      font-size: 0.9rem;
+      line-height: 1.4;
+    }
+
+    .scaretube-back {
+      margin-top: 12px;
+      border: 1px solid rgba(117, 169, 248, 0.8);
+      background: rgba(117, 169, 248, 0.2);
+      color: #eaf2ff;
+      border-radius: 999px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 0.88rem;
+    }
+
+    .hint {
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      z-index: 11;
+      background: rgba(32, 33, 36, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      color: #dfe4ea;
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      display: none;
+    }
+
+    .hint.show {
+      display: block;
+    }
+
+    body.mode-browse .home {
+      display: none;
+    }
+
+    body.mode-browse .browse {
+      display: block;
+    }
+
+    body.fullscreen-active .browse-drawer,
+    body.fullscreen-active .drawer-toggle,
+    body.fullscreen-active .hint {
+      opacity: 0;
+      pointer-events: none;
+      display: none;
+    }
+
+    body.scaretube-mode .browse-drawer,
+    body.scaretube-mode .drawer-toggle,
+    body.scaretube-mode .hint,
+    body.scaretube-mode #resultsPane,
+    body.scaretube-mode #viewer {
+      display: none;
+    }
+
+    @media (max-width: 720px) {
+      .home {
+        padding: 14px;
+      }
+
+      .browse-drawer {
+        grid-template-columns: auto 1fr auto;
+      }
+
+      .results-pane {
+        grid-template-columns: 1fr;
+      }
+
+      .results-side {
+        position: static;
+      }
+
+      .scaretube-pane {
+        grid-template-columns: 1fr;
+      }
+
+      .scaretube-side {
+        position: static;
+      }
+
+      .result-card.video {
+        grid-template-columns: 1fr;
+      }
+
+      .query {
+        font-size: 1.12rem;
+      }
+
+      .go {
+        height: 46px;
+        min-width: 46px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <section class="home" aria-label="Home">
+    <div class="home-inner">
+      <h1 class="logo">Scars Search</h1>
+      <form id="homeForm" class="search-form" autocomplete="off">
+        <input
+          id="homeQuery"
+          class="query"
+          type="text"
+          placeholder="Search Brave (default) or use g: for Google"
+          aria-label="Search query"
+          spellcheck="false"
+        />
+        <button type="submit" class="go" aria-label="Search">🔎</button>
+      </form>
+    </div>
+  </section>
+
+  <section id="browse" class="browse" aria-label="Browse">
+    <div id="browseDrawer" class="browse-drawer">
+      <button id="homeBtn" type="button" class="top-btn">Home</button>
+      <input id="topQuery" class="top-input" type="text" aria-label="Search input" />
+      <button id="topGo" type="button" class="top-go">Go</button>
+    </div>
+
+    <button id="drawerToggle" type="button" class="drawer-toggle" aria-label="Show search bar">⌃</button>
+
+    <section id="viewer" class="viewer" aria-label="No iframe browsing panel">
+      <h3 class="viewer-title">No-iframe mode is active</h3>
+      <p id="viewerLink" class="viewer-link"></p>
+      <p class="viewer-note">For direct websites, Scars Search now opens pages in a new tab instead of embedding them.</p>
+      <a id="viewerOpen" class="viewer-open" href="#" target="_blank" rel="noopener noreferrer">Open Site</a>
+    </section>
+
+    <section id="resultsPane" class="results-pane" aria-label="Custom search results">
+      <div class="results-main">
+        <h2 id="resultsTitle" class="results-title"></h2>
+        <p id="resultsSub" class="results-sub"></p>
+        <div id="resultsTabs" class="results-tabs">
+          <button type="button" class="results-tab active" data-mode="all">All</button>
+          <button type="button" class="results-tab" data-mode="videos">Videos (ScareTube)</button>
+        </div>
+        <div id="resultsList"></div>
+      </div>
+
+      <aside class="results-side">
+        <h3>Scars Results</h3>
+        <p>This is your own results view. Click any result to load the page below your fixed URL.</p>
+      </aside>
+    </section>
+
+    <section id="scareTubePane" class="scaretube-pane" aria-label="ScareTube player">
+      <div class="scaretube-shell">
+        <iframe
+          id="scareTubePlayer"
+          class="scaretube-player"
+          title="ScareTube Player"
+          referrerpolicy="strict-origin-when-cross-origin"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowfullscreen
+        ></iframe>
+        <h3 id="scareTubeTitle" class="scaretube-title"></h3>
+        <p id="scareTubeLink" class="scaretube-link"></p>
+        <div class="scaretube-actions">
+          <a id="scareTubeOpen" class="scaretube-open" href="#" target="_blank" rel="noopener noreferrer">Watch On YouTube</a>
+        </div>
+        <div class="scaretube-tip">
+          If a video blocks embed playback, use "Watch On YouTube".
+        </div>
+      </div>
+
+      <aside class="scaretube-side">
+        <h3>ScareTube</h3>
+        <p>Real videos from YouTube, presented in ScareTube and opened without embeds.</p>
+        <button id="scareTubeBack" type="button" class="scaretube-back">Back To Results</button>
+      </aside>
+    </section>
+
+    <div id="embedHint" class="hint">No iframe mode is on. Results open as direct pages in a new tab.</div>
+  </section>
+
+  <script>
+    const homeForm = document.getElementById("homeForm");
+    const homeQuery = document.getElementById("homeQuery");
+    const viewer = document.getElementById("viewer");
+    const viewerLink = document.getElementById("viewerLink");
+    const viewerOpen = document.getElementById("viewerOpen");
+    const browseDrawer = document.getElementById("browseDrawer");
+    const drawerToggle = document.getElementById("drawerToggle");
+    const embedHint = document.getElementById("embedHint");
+    const resultsPane = document.getElementById("resultsPane");
+    const resultsTitle = document.getElementById("resultsTitle");
+    const resultsSub = document.getElementById("resultsSub");
+    const resultsTabs = document.getElementById("resultsTabs");
+    const resultsList = document.getElementById("resultsList");
+    const scareTubePane = document.getElementById("scareTubePane");
+    const scareTubePlayer = document.getElementById("scareTubePlayer");
+    const scareTubeTitle = document.getElementById("scareTubeTitle");
+    const scareTubeLink = document.getElementById("scareTubeLink");
+    const scareTubeOpen = document.getElementById("scareTubeOpen");
+    const scareTubeBack = document.getElementById("scareTubeBack");
+    const homeBtn = document.getElementById("homeBtn");
+    const topQuery = document.getElementById("topQuery");
+    const topGo = document.getElementById("topGo");
+
+    let currentSearchQuery = "";
+    let currentSearchEngine = "brave";
+    let currentResultsMode = "all";
+    let invidiousInstancesCache = null;
+
+    function buildSearchUrl(q, useEngine) {
+      const query = encodeURIComponent(q);
+      if (useEngine === "google") {
+        return "https://www.google.com/search?q=" + query;
+      }
+      return "https://search.brave.com/search?q=" + query + "&source=web";
+    }
+
+    function looksLikeUrl(value) {
+      const v = value.trim();
+      if (!v) return false;
+      if (/^https?:\/\//i.test(v)) return true;
+      return /^[a-z0-9-]+(\.[a-z0-9-]+)+([/?#:].*)?$/i.test(v);
+    }
+
+    function normalizeUrl(value) {
+      const v = value.trim();
+      if (/^https?:\/\//i.test(v)) return v;
+      return "https://" + v;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function hideResultsPane() {
+      resultsPane.classList.remove("show");
+      scareTubePane.classList.remove("show");
+      document.body.classList.remove("scaretube-mode");
+      resultsList.innerHTML = "";
+      resultsTitle.textContent = "";
+      resultsSub.textContent = "";
+      scareTubeTitle.textContent = "";
+      scareTubeLink.textContent = "";
+      scareTubeOpen.href = "#";
+      scareTubePlayer.src = "about:blank";
+      viewerLink.textContent = "";
+      viewerOpen.href = "#";
+      viewer.classList.remove("hidden");
+      currentSearchQuery = "";
+    }
+
+    function showResultsPane() {
+      viewer.classList.add("hidden");
+      scareTubePane.classList.remove("show");
+      document.body.classList.remove("scaretube-mode");
+      resultsPane.classList.add("show");
+      hideEmbedHint();
+    }
+
+    function buildCleanYoutubeWatchUrl(videoId) {
+      return "https://www.youtube.com/watch?v=" + encodeURIComponent(videoId || "");
+    }
+
+    function showScareTube(videoId, title, sourceUrl) {
+      if (!videoId) return;
+      viewer.classList.add("hidden");
+      resultsPane.classList.remove("show");
+      document.body.classList.add("scaretube-mode");
+      scareTubePane.classList.add("show");
+      const cleanWatchUrl = buildCleanYoutubeWatchUrl(videoId);
+      scareTubePlayer.src = "https://www.youtube-nocookie.com/embed/" + encodeURIComponent(videoId) + "?autoplay=1&rel=0&modestbranding=1&playsinline=1";
+      scareTubeTitle.textContent = title || "ScareTube Video";
+      scareTubeLink.textContent = sourceUrl || cleanWatchUrl;
+      scareTubeOpen.href = cleanWatchUrl;
+      hideEmbedHint();
+    }
+
+    function parseSearchInput(value) {
+      let engineName = "brave";
+      let query = value.trim();
+
+      if (/^g:\s*/i.test(query)) {
+        engineName = "google";
+        query = query.replace(/^g:\s*/i, "").trim();
+      } else if (/^b:\s*/i.test(query)) {
+        engineName = "brave";
+        query = query.replace(/^b:\s*/i, "").trim();
+      }
+
+      return { engineName, query };
+    }
+
+    function parseLinksFromProxyText(text) {
+      const matches = [...text.matchAll(/\[(.*?)\]\((https?:\/\/[^)\s]+)\)/g)];
+      const out = [];
+      const seen = new Set();
+
+      for (const m of matches) {
+        const title = (m[1] || "").trim();
+        const link = (m[2] || "").trim();
+        if (!title || !link) continue;
+        if (seen.has(link)) continue;
+        seen.add(link);
+
+        const lower = link.toLowerCase();
+        if (lower.includes("search.brave.com") || lower.includes("google.com/search")) continue;
+
+        out.push({ title, link });
+        if (out.length >= 12) break;
+      }
+
+      return out;
+    }
+
+    function isVideoLink(url) {
+      const lower = url.toLowerCase();
+      return (
+        lower.includes("youtube.com/watch") ||
+        lower.includes("youtu.be/") ||
+        lower.includes("youtube.com/shorts/") ||
+        lower.includes("vimeo.com/") ||
+        lower.includes("dailymotion.com/")
+      );
+    }
+
+    function extractYoutubeId(url) {
+      try {
+        const u = new URL(url);
+        if (u.hostname.includes("youtu.be")) {
+          return u.pathname.replace("/", "").trim();
+        }
+        if (u.pathname.startsWith("/watch")) {
+          return u.searchParams.get("v") || "";
+        }
+        if (u.pathname.startsWith("/shorts/")) {
+          return u.pathname.split("/")[2] || "";
+        }
+        return "";
+      } catch {
+        return "";
+      }
+    }
+
+    function setActiveResultsTab(mode) {
+      currentResultsMode = mode;
+      const tabs = resultsTabs.querySelectorAll(".results-tab");
+      tabs.forEach((tab) => {
+        tab.classList.toggle("active", tab.getAttribute("data-mode") === mode);
+      });
+    }
+
+    async function fetchProxyText(url) {
+      const sanitized = String(url || "").replace(/^https?:\/\//i, "");
+      const candidates = [
+        String(url || ""),
+        "https://r.jina.ai/http://" + sanitized
+      ];
+
+      let lastError = null;
+      for (const candidate of candidates) {
+        if (!candidate) continue;
+        try {
+          const response = await fetch(candidate);
+          if (!response.ok) {
+            throw new Error("HTTP " + response.status);
+          }
+          const text = await response.text();
+          if (text) return text;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      throw lastError || new Error("Fetch failed");
+    }
+
+    async function getInvidiousInstances() {
+      if (Array.isArray(invidiousInstancesCache) && invidiousInstancesCache.length) {
+        return invidiousInstancesCache;
+      }
+
+      const fallbacks = [
+        "invidious.f5.si",
+        "yewtu.be",
+        "inv.nadeko.net"
+      ];
+
+      try {
+        const text = await fetchProxyText("https://api.invidious.io/instances.json?sort_by=health");
+        const parsed = parseJsonFromProxyText(text);
+        const rows = Array.isArray(parsed) ? parsed : [];
+        const discovered = [];
+
+        for (const row of rows) {
+          if (!Array.isArray(row) || row.length < 2) continue;
+          const host = String(row[0] || "").trim();
+          const meta = row[1] && typeof row[1] === "object" ? row[1] : {};
+          const type = String(meta.type || "https").toLowerCase();
+          if (!host || host.includes(".onion") || type !== "https") continue;
+          discovered.push(host);
+          if (discovered.length >= 20) break;
+        }
+
+        if (discovered.length) {
+          invidiousInstancesCache = discovered;
+          return discovered;
+        }
+      } catch {
+      }
+
+      invidiousInstancesCache = fallbacks;
+      return fallbacks;
+    }
+
+    function parseJsonFromProxyText(text) {
+      const raw = String(text || "").trim();
+      if (!raw) return null;
+
+      const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      const candidate = fence ? fence[1].trim() : raw;
+
+      try {
+        return JSON.parse(candidate);
+      } catch {
+      }
+
+      const firstArray = candidate.indexOf("[");
+      const lastArray = candidate.lastIndexOf("]");
+      if (firstArray !== -1 && lastArray > firstArray) {
+        try {
+          return JSON.parse(candidate.slice(firstArray, lastArray + 1));
+        } catch {
+        }
+      }
+
+      const firstObject = candidate.indexOf("{");
+      const lastObject = candidate.lastIndexOf("}");
+      if (firstObject !== -1 && lastObject > firstObject) {
+        try {
+          return JSON.parse(candidate.slice(firstObject, lastObject + 1));
+        } catch {
+        }
+      }
+
+      return null;
+    }
+
+    function normalizeVideoResults(items) {
+      const out = [];
+      const seen = new Set();
+
+      for (const item of items || []) {
+        const title = String(item.title || "").trim();
+        const link = String(item.link || "").trim();
+        if (!title || !link) continue;
+        if (seen.has(link)) continue;
+        seen.add(link);
+        out.push({ title, link });
+        if (out.length >= 12) break;
+      }
+
+      return out;
+    }
+
+    async function fetchInvidiousVideos(query) {
+      const hosts = await getInvidiousInstances();
+      const instances = hosts.map((host) => "https://" + host);
+
+      const videos = [];
+      const seen = new Set();
+
+      for (const instance of instances) {
+        try {
+          const apiUrl = instance + "/api/v1/search?q=" + encodeURIComponent(query) + "&type=video&sort_by=relevance";
+          const text = await fetchProxyText(apiUrl);
+          const data = parseJsonFromProxyText(text);
+          const list = Array.isArray(data) ? data : [];
+
+          for (const item of list) {
+            const videoId = String(item.videoId || "").trim();
+            const title = String(item.title || "").trim();
+            if (!videoId || !title) continue;
+
+            const link = "https://www.youtube.com/watch?v=" + videoId;
+            if (seen.has(link)) continue;
+            seen.add(link);
+            videos.push({ title, link });
+            if (videos.length >= 12) return videos;
+          }
+        } catch {
+        }
+      }
+
+      return videos;
+    }
+
+    async function fetchPipedVideos(query) {
+      const instances = [
+        "https://piped.video",
+        "https://api.piped.video",
+        "https://pipedapi.kavin.rocks"
+      ];
+
+      const videos = [];
+      const seen = new Set();
+
+      for (const instance of instances) {
+        try {
+          const apiUrl = instance + "/search?q=" + encodeURIComponent(query) + "&filter=videos";
+          const text = await fetchProxyText(apiUrl);
+          const data = parseJsonFromProxyText(text);
+          const list = Array.isArray(data)
+            ? data
+            : Array.isArray(data && data.items)
+              ? data.items
+              : [];
+
+          for (const item of list) {
+            const type = String(item.type || "").toLowerCase();
+            const title = String(item.title || item.name || "").trim();
+            const url = String(item.url || item.link || "").trim();
+
+            if (!title) continue;
+            if (type && type !== "stream" && type !== "video") continue;
+
+            let videoId = "";
+            if (item.id) {
+              videoId = String(item.id);
+            } else if (url.startsWith("/watch")) {
+              videoId = extractYoutubeId("https://www.youtube.com" + url);
+            } else if (url.includes("youtube.com") || url.includes("youtu.be")) {
+              videoId = extractYoutubeId(url);
+            }
+
+            if (!videoId) continue;
+            const link = "https://www.youtube.com/watch?v=" + videoId;
+            if (seen.has(link)) continue;
+            seen.add(link);
+            videos.push({ title, link });
+            if (videos.length >= 12) return videos;
+          }
+        } catch {
+        }
+      }
+
+      return videos;
+    }
+
+    async function fetchVideoResults(query) {
+      const combined = [];
+      const seen = new Set();
+
+      const add = (items) => {
+        for (const item of items) {
+          const link = String(item.link || "");
+          if (!link || seen.has(link)) continue;
+          seen.add(link);
+          combined.push(item);
+          if (combined.length >= 12) return;
+        }
+      };
+
+      add(normalizeVideoResults(await fetchInvidiousVideos(query)));
+      if (combined.length < 12) {
+        add(normalizeVideoResults(await fetchPipedVideos(query)));
+      }
+
+      if (combined.length < 12) {
+        const fallbackTexts = [];
+        try {
+          fallbackTexts.push(await fetchProxyText("https://www.youtube.com/results?search_query=" + encodeURIComponent(query)));
+        } catch {
+        }
+        try {
+          fallbackTexts.push(await fetchProxyText("https://search.brave.com/videos?q=" + encodeURIComponent(query)));
+        } catch {
+        }
+
+        const fallback = parseLinksFromProxyText(fallbackTexts.join("\n"))
+          .filter((item) => isVideoLink(item.link));
+        add(normalizeVideoResults(fallback));
+      }
+
+      return combined.slice(0, 12);
+    }
+
+    async function buildOwnResults(query, engineName, mode = "all") {
+      currentSearchQuery = query;
+      currentSearchEngine = engineName;
+      setActiveResultsTab(mode);
+
+      resultsTitle.textContent = `Results for "${query}"`;
+      resultsSub.textContent = mode === "videos"
+        ? "ScareTube: YouTube-powered video results"
+        : `Source: ${engineName === "google" ? "Google" : "Brave"}`;
+      resultsList.innerHTML = `<div class="results-empty">Loading results...</div>`;
+
+      try {
+        let links = [];
+        if (mode === "videos") {
+          links = await fetchVideoResults(query);
+        } else {
+          const text = await fetchProxyText(buildSearchUrl(query, engineName));
+          links = parseLinksFromProxyText(text);
+        }
+
+        if (links.length === 0) {
+          resultsList.innerHTML = `<div class="results-empty">No parsed results found. Try another query.</div>`;
+          return;
+        }
+
+        resultsList.innerHTML = links
+          .map((item) => {
+            const title = escapeHtml(item.title);
+            const link = escapeHtml(item.link);
+            let host = item.link;
+            try {
+              host = new URL(item.link).hostname;
+            } catch {
+              host = item.link;
+            }
+
+            let target = item.link;
+            let snippet = "Open this result in Scars Search.";
+            let videoId = "";
+            let extraClass = "";
+            let mediaBlock = "";
+            if (mode === "videos") {
+              videoId = extractYoutubeId(item.link);
+              snippet = "Play this video in ScareTube.";
+              extraClass = " video";
+              const thumb = "https://i.ytimg.com/vi/" + encodeURIComponent(videoId || "") + "/hqdefault.jpg";
+              mediaBlock = `<img class=\"video-thumb\" src=\"${thumb}\" alt=\"Video thumbnail\" loading=\"lazy\" />`;
+            }
+
+            return `
+              <button type="button" class="result-card${extraClass}" data-target="${encodeURIComponent(target)}" data-video-id="${encodeURIComponent(videoId)}" data-title="${encodeURIComponent(item.title)}" data-link="${encodeURIComponent(item.link)}">
+                ${mediaBlock}
+                <div class="video-meta">
+                  <div class="title">${title}</div>
+                  <div class="link">${escapeHtml(host)}</div>
+                  <div class="snippet">${escapeHtml(snippet)}</div>
+                </div>
+              </button>
+            `;
+          })
+          .join("");
+      } catch {
+        resultsList.innerHTML = `<div class="results-empty">Could not load search results list right now.</div>`;
+      }
+    }
+
+
+    function showEmbedHint() {
+      if (document.body.classList.contains("fullscreen-active")) return;
+      embedHint.classList.add("show");
+    }
+
+    function hideEmbedHint() {
+      embedHint.classList.remove("show");
+    }
+
+    function setFullscreenState() {
+      const fullscreen = Boolean(document.fullscreenElement);
+      document.body.classList.toggle("fullscreen-active", fullscreen);
+      if (fullscreen) {
+        document.body.classList.remove("drawer-open");
+        hideEmbedHint();
+      }
+    }
+
+    function goToTarget(raw) {
+      const value = raw.trim();
+      if (!value) return;
+
+      let target = "";
+      if (looksLikeUrl(value)) {
+        hideResultsPane();
+        target = normalizeUrl(value);
+      } else {
+        const parsed = parseSearchInput(value);
+        const engineName = parsed.engineName;
+        const query = parsed.query;
+        if (!query) return;
+
+        topQuery.value = value;
+        document.body.classList.add("mode-browse");
+        document.body.classList.remove("drawer-open");
+        showResultsPane();
+        buildOwnResults(query, engineName, "all");
+        return;
+      }
+
+      topQuery.value = value;
+      document.body.classList.add("mode-browse");
+      document.body.classList.remove("drawer-open");
+      resultsPane.classList.remove("show");
+      scareTubePane.classList.remove("show");
+      viewer.classList.remove("hidden");
+      viewerLink.textContent = target;
+      viewerOpen.href = target;
+      showEmbedHint();
+    }
+
+    homeForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      goToTarget(homeQuery.value);
+    });
+
+    topGo.addEventListener("click", () => {
+      goToTarget(topQuery.value);
+    });
+
+    topQuery.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        goToTarget(topQuery.value);
+      }
+    });
+
+    resultsList.addEventListener("click", (event) => {
+      const card = event.target.closest(".result-card");
+      if (!card) return;
+
+      if (card.classList.contains("video")) {
+        const videoId = decodeURIComponent(card.getAttribute("data-video-id") || "");
+        const title = decodeURIComponent(card.getAttribute("data-title") || "");
+        const sourceLink = decodeURIComponent(card.getAttribute("data-link") || "");
+        if (videoId) {
+          showScareTube(videoId, title, sourceLink);
+          return;
+        }
+      }
+
+      const encoded = card.getAttribute("data-target");
+      if (!encoded) return;
+      const target = decodeURIComponent(encoded);
+      topQuery.value = target;
+      goToTarget(target);
+    });
+
+    resultsTabs.addEventListener("click", (event) => {
+      const tab = event.target.closest(".results-tab");
+      if (!tab) return;
+      if (!currentSearchQuery) return;
+
+      const mode = tab.getAttribute("data-mode") || "all";
+      buildOwnResults(currentSearchQuery, currentSearchEngine, mode);
+    });
+
+    scareTubeBack.addEventListener("click", () => {
+      document.body.classList.remove("scaretube-mode");
+      scareTubePane.classList.remove("show");
+      scareTubePlayer.src = "about:blank";
+      resultsPane.classList.add("show");
+    });
+
+    drawerToggle.addEventListener("click", () => {
+      if (document.body.classList.contains("fullscreen-active")) return;
+      document.body.classList.toggle("drawer-open");
+    });
+
+    homeBtn.addEventListener("click", () => {
+      document.body.classList.remove("mode-browse");
+      document.body.classList.remove("drawer-open");
+      hideEmbedHint();
+      hideResultsPane();
+    });
+
+    document.addEventListener("fullscreenchange", setFullscreenState);
+
+    setFullscreenState();
+    hideEmbedHint();
+    hideResultsPane();
+  </script>
+</body>
+</html>
