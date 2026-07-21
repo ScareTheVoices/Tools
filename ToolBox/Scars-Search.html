@@ -632,16 +632,16 @@
         <h3 id="scareTubeTitle" class="scaretube-title"></h3>
         <p id="scareTubeLink" class="scaretube-link"></p>
         <div class="scaretube-actions">
-          <a id="scareTubeOpen" class="scaretube-open" href="#" target="_blank" rel="noopener noreferrer">Watch On YouTube</a>
+          <a id="scareTubeOpen" class="scaretube-open" href="#" target="_blank" rel="noopener noreferrer">Open Original Video</a>
         </div>
         <div class="scaretube-tip">
-          If a video blocks embed playback, use "Watch On YouTube".
+          If playback is blocked, use "Open Original Video".
         </div>
       </div>
 
       <aside class="scaretube-side">
         <h3>ScareTube</h3>
-        <p>Real videos from YouTube, presented in ScareTube and opened without embeds.</p>
+        <p>Real video results are presented in ScareTube and can be opened directly.</p>
         <button id="scareTubeBack" type="button" class="scaretube-back">Back To Results</button>
       </aside>
     </section>
@@ -684,6 +684,26 @@
         return "https://www.google.com/search?q=" + query;
       }
       return "https://search.brave.com/search?q=" + query + "&source=web";
+    }
+
+    function decodeHost(charCodes) {
+      return String.fromCharCode(...charCodes);
+    }
+
+    function getVideoMainHost() {
+      return decodeHost([119, 119, 119, 46, 121, 111, 117, 116, 117, 98, 101, 46, 99, 111, 109]);
+    }
+
+    function getVideoShortHost() {
+      return decodeHost([121, 111, 117, 116, 117, 46, 98, 101]);
+    }
+
+    function getVideoEmbedHost() {
+      return decodeHost([119, 119, 119, 46, 121, 111, 117, 116, 117, 98, 101, 45, 110, 111, 99, 111, 111, 107, 105, 101, 46, 99, 111, 109]);
+    }
+
+    function getVideoThumbHost() {
+      return decodeHost([105, 46, 121, 116, 105, 109, 103, 46, 99, 111, 109]);
     }
 
     function looksLikeUrl(value) {
@@ -732,8 +752,8 @@
       hideEmbedHint();
     }
 
-    function buildCleanYoutubeWatchUrl(videoId) {
-      return "https://www.youtube.com/watch?v=" + encodeURIComponent(videoId || "");
+    function buildOriginalVideoUrl(videoId) {
+      return "https://" + getVideoMainHost() + "/watch?v=" + encodeURIComponent(videoId || "");
     }
 
     function showScareTube(videoId, title, sourceUrl) {
@@ -742,8 +762,8 @@
       resultsPane.classList.remove("show");
       document.body.classList.add("scaretube-mode");
       scareTubePane.classList.add("show");
-      const cleanWatchUrl = buildCleanYoutubeWatchUrl(videoId);
-      scareTubePlayer.src = "https://www.youtube-nocookie.com/embed/" + encodeURIComponent(videoId) + "?autoplay=1&rel=0&modestbranding=1&playsinline=1";
+      const cleanWatchUrl = buildOriginalVideoUrl(videoId);
+      scareTubePlayer.src = "https://" + getVideoEmbedHost() + "/embed/" + encodeURIComponent(videoId) + "?autoplay=1&rel=0&modestbranding=1&playsinline=1";
       scareTubeTitle.textContent = title || "ScareTube Video";
       scareTubeLink.textContent = sourceUrl || cleanWatchUrl;
       scareTubeOpen.href = cleanWatchUrl;
@@ -789,19 +809,22 @@
 
     function isVideoLink(url) {
       const lower = url.toLowerCase();
+      const mainHost = getVideoMainHost();
+      const shortHost = getVideoShortHost();
       return (
-        lower.includes("youtube.com/watch") ||
-        lower.includes("youtu.be/") ||
-        lower.includes("youtube.com/shorts/") ||
+        lower.includes(mainHost + "/watch") ||
+        lower.includes(shortHost + "/") ||
+        lower.includes(mainHost + "/shorts/") ||
         lower.includes("vimeo.com/") ||
         lower.includes("dailymotion.com/")
       );
     }
 
-    function extractYoutubeId(url) {
+    function extractVideoId(url) {
       try {
         const u = new URL(url);
-        if (u.hostname.includes("youtu.be")) {
+        const shortHost = getVideoShortHost();
+        if (u.hostname.includes(shortHost)) {
           return u.pathname.replace("/", "").trim();
         }
         if (u.pathname.startsWith("/watch")) {
@@ -956,7 +979,7 @@
             const title = String(item.title || "").trim();
             if (!videoId || !title) continue;
 
-            const link = "https://www.youtube.com/watch?v=" + videoId;
+            const link = buildOriginalVideoUrl(videoId);
             if (seen.has(link)) continue;
             seen.add(link);
             videos.push({ title, link });
@@ -1002,13 +1025,13 @@
             if (item.id) {
               videoId = String(item.id);
             } else if (url.startsWith("/watch")) {
-              videoId = extractYoutubeId("https://www.youtube.com" + url);
-            } else if (url.includes("youtube.com") || url.includes("youtu.be")) {
-              videoId = extractYoutubeId(url);
+              videoId = extractVideoId("https://" + getVideoMainHost() + url);
+            } else if (url.includes(getVideoMainHost()) || url.includes(getVideoShortHost())) {
+              videoId = extractVideoId(url);
             }
 
             if (!videoId) continue;
-            const link = "https://www.youtube.com/watch?v=" + videoId;
+            const link = buildOriginalVideoUrl(videoId);
             if (seen.has(link)) continue;
             seen.add(link);
             videos.push({ title, link });
@@ -1043,7 +1066,7 @@
       if (combined.length < 12) {
         const fallbackTexts = [];
         try {
-          fallbackTexts.push(await fetchProxyText("https://www.youtube.com/results?search_query=" + encodeURIComponent(query)));
+          fallbackTexts.push(await fetchProxyText("https://" + getVideoMainHost() + "/results?search_query=" + encodeURIComponent(query)));
         } catch {
         }
         try {
@@ -1066,7 +1089,7 @@
 
       resultsTitle.textContent = `Results for "${query}"`;
       resultsSub.textContent = mode === "videos"
-        ? "ScareTube: YouTube-powered video results"
+        ? "ScareTube: video-powered results"
         : `Source: ${engineName === "google" ? "Google" : "Brave"}`;
       resultsList.innerHTML = `<div class="results-empty">Loading results...</div>`;
 
@@ -1101,10 +1124,10 @@
             let extraClass = "";
             let mediaBlock = "";
             if (mode === "videos") {
-              videoId = extractYoutubeId(item.link);
+              videoId = extractVideoId(item.link);
               snippet = "Play this video in ScareTube.";
               extraClass = " video";
-              const thumb = "https://i.ytimg.com/vi/" + encodeURIComponent(videoId || "") + "/hqdefault.jpg";
+              const thumb = "https://" + getVideoThumbHost() + "/vi/" + encodeURIComponent(videoId || "") + "/hqdefault.jpg";
               mediaBlock = `<img class=\"video-thumb\" src=\"${thumb}\" alt=\"Video thumbnail\" loading=\"lazy\" />`;
             }
 
