@@ -2579,8 +2579,13 @@ function renderPropsPanel() {
       <div class="prop-row"><label>Custom Colors</label><input id="ut-custom-colors" type="checkbox" ${data.utilCustomColors ? 'checked' : ''} /></div>
       ${streams.map((stream, idx) => `<div class="prop-row"><label>Streamer ${idx + 1}</label><input id="ut-stream-channel-${idx}" type="text" value="${escHtml(stream.channel || '')}" placeholder="channel_name" /><input id="ut-stream-color-${idx}" type="color" value="${utilityColorToPickerValue(stream.color || '#a78bfa')}" title="${escHtml(stream.color || '#a78bfa')}" ${data.utilCustomColors ? '' : 'disabled'} /></div>`).join('')}
       <div class="prop-row"><button class="btn btn-secondary" id="ut-stream-add" style="flex:1">+</button><button class="btn btn-secondary" id="ut-stream-remove" style="flex:1">-</button></div>
-      <div class="prop-row"><label>Username</label><input id="ut-user" type="text" value="${escHtml(data.username || '')}" placeholder="bot_or_user" /></div>
+      <div class="prop-row"><label>UCCR</label><input id="ut-uccr" type="checkbox" ${data.utilControlsEnabled ? 'checked' : ''} /></div>
+      ${data.utilControlsEnabled ? `<div class="prop-row"><label>Username</label><input id="ut-user" type="text" value="${escHtml(data.username || '')}" placeholder="bot_or_user" /></div>
       <div class="prop-row"><label>OAuth</label><input id="ut-token" type="password" value="${escHtml(data.oauthToken || '')}" placeholder="oauth:xxxx" /></div>
+      <div class="prop-row" style="align-items:flex-start"><label>Commands</label>
+        <textarea id="ut-commands" placeholder="!cmd|action|value|duration|reply">${escHtml(data.utilCommandsText || '')}</textarea>
+      </div>
+      <div class="prop-row" style="align-items:flex-start"><label></label><span style="font-size:.7rem;color:var(--text-muted);flex:1">Format: <strong>!cmd|action|value|duration|reply</strong><br/>Actions: show-text, display-image, scroll-text, chat-message</span></div>` : ''}
       <div class="prop-row"><label>Max Lines</label><input id="ut-max" type="number" value="${data.maxItems || 6}" min="1" max="30" /></div>
       <div class="prop-row"><label>Font</label>
         <select id="ut-font">
@@ -2835,6 +2840,14 @@ function bindPropsEvents(data) {
   data.utilMode = 'chat';
   bind('ut-style', 'utilStyle');
   bind('ut-show-header', 'utilShowHeader');
+  const uccrToggle = document.getElementById('ut-uccr');
+  if (uccrToggle) {
+    uccrToggle.addEventListener('change', () => {
+      data.utilControlsEnabled = uccrToggle.checked;
+      renderPropsPanel();
+    });
+  }
+  bind('ut-commands', 'utilCommandsText');
   const customColorsToggle = document.getElementById('ut-custom-colors');
   if (customColorsToggle) {
     customColorsToggle.addEventListener('change', () => {
