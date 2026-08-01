@@ -135,21 +135,22 @@
 
     /* ── CENTER: Preview Canvas ── */
     .canvas-container {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: auto;
-      background: repeating-conic-gradient(#1a1d2799 0% 25%, transparent 0% 50%) 0 0 / 20px 20px;
-      position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+    background: transparent; /* Changed from repeating-conic-gradient to pure clear space */
+    position: relative;
     }
     #preview-canvas {
-      position: relative;
-      background: transparent;
-      flex-shrink: 0;
-      overflow: hidden;
-      outline: 2px solid var(--border);
+    position: relative;
+    background: transparent !important; /* CRITICAL: Allows true transparency mapping */
+    flex-shrink: 0;
+    overflow: hidden;
+    outline: 2px solid var(--border);
     }
+
 
     #transform-hud {
       position: absolute;
@@ -1618,6 +1619,7 @@ function defaultData(type) {
     id: nextId++, type,
     x: 40, y: 40, w: 300, h: 60,
     visible: true, opacity: 1, zIndex: elements.length + 1,
+    lockAspectRatio: false,
     layerShadow: false,
     layerShadowAngle: 315,
     layerShadowDistance: 8,
@@ -1923,12 +1925,35 @@ function startResize(e, el, data) {
   e.preventDefault();
   const startX = e.clientX, startY = e.clientY;
   const ow = data.w, oh = data.h;
+  const baseRatio = (parseFloat(data.aspectRatio) > 0)
+    ? parseFloat(data.aspectRatio)
+    : (oh > 0 ? (ow / oh) : 1);
   showTransformHud(data, 'Resize');
   function onMove(ev) {
     const dx = (ev.clientX - startX) / zoom;
     const dy = (ev.clientY - startY) / zoom;
-    data.w = Math.max(20, Math.round(ow + dx));
-    data.h = Math.max(20, Math.round(oh + dy));
+    if (data.lockAspectRatio) {
+      const scaleW = (ow + dx) / ow;
+      const scaleH = (oh + dy) / oh;
+      let scale = Math.abs(scaleW - 1) >= Math.abs(scaleH - 1) ? scaleW : scaleH;
+      if (!Number.isFinite(scale)) scale = 1;
+
+      let nextW = ow * scale;
+      let nextH = oh * scale;
+      if (nextW < 20 || nextH < 20) {
+        const minScale = Math.max(20 / ow, 20 / oh);
+        scale = Math.max(scale, minScale);
+        nextW = ow * scale;
+        nextH = oh * scale;
+      }
+
+      data.w = Math.max(20, Math.round(nextW));
+      data.h = Math.max(20, Math.round(nextH));
+      data.aspectRatio = baseRatio;
+    } else {
+      data.w = Math.max(20, Math.round(ow + dx));
+      data.h = Math.max(20, Math.round(oh + dy));
+    }
     el.style.width  = (data.w * zoom) + 'px';
     el.style.height = (data.h * zoom) + 'px';
     refreshElement(data.id);
@@ -2382,6 +2407,7 @@ function renderPropsPanel() {
     <div class="prop-row"><label>Y</label><input id="prop-y" type="number" value="${data.y}" /></div>
     <div class="prop-row"><label>W</label><input id="prop-w" type="number" value="${data.w}" /></div>
     <div class="prop-row"><label>H</label><input id="prop-h" type="number" value="${data.h}" /></div>
+    <div class="prop-row"><label>Lock Ratio</label><input id="prop-lock-ratio" type="checkbox" ${data.lockAspectRatio ? 'checked' : ''} /></div>
     <div class="prop-row"><label>Z-Index</label><input id="prop-z" type="number" value="${data.zIndex}" /></div>
     <div class="prop-row" style="align-items:flex-start">
       <label>Align</label>
@@ -2681,9 +2707,56 @@ function bindPropsEvents(data) {
   bind('prop-shadow-color', 'layerShadowColor');
   bind('prop-x',       'x',       int);
   bind('prop-y',       'y',       int);
-  bind('prop-w',       'w',       int);
-  bind('prop-h',       'h',       int);
   bind('prop-z',       'zIndex',  int);
+  const ratioValue = () => {
+    const saved = parseFloat(data.aspectRatio);
+    if (Number.isFinite(saved) && saved > 0) return saved;
+    const fromSize = (data.h > 0) ? (data.w / data.h) : 1;
+    return (Number.isFinite(fromSize) && fromSize > 0) ? fromSize : 1;
+  };
+  const clampSize = value => Math.max(20, Math.round(Number(value) || 0));
+  const propWInput = document.getElementById('prop-w');
+  const propHInput = document.getElementById('prop-h');
+  if (propWInput) {
+    propWInput.addEventListener('input', () => {
+      const newW = clampSize(propWInput.value);
+      if (data.lockAspectRatio) {
+        const ratio = ratioValue();
+        data.w = newW;
+        data.h = clampSize(newW / ratio);
+        data.aspectRatio = ratio;
+        if (propHInput) propHInput.value = data.h;
+      } else {
+        data.w = newW;
+      }
+      refreshElement(data.id);
+    });
+  }
+  if (propHInput) {
+    propHInput.addEventListener('input', () => {
+      const newH = clampSize(propHInput.value);
+      if (data.lockAspectRatio) {
+        const ratio = ratioValue();
+        data.h = newH;
+        data.w = clampSize(newH * ratio);
+        data.aspectRatio = ratio;
+        if (propWInput) propWInput.value = data.w;
+      } else {
+        data.h = newH;
+      }
+      refreshElement(data.id);
+    });
+  }
+  const lockRatioToggle = document.getElementById('prop-lock-ratio');
+  if (lockRatioToggle) {
+    lockRatioToggle.addEventListener('change', () => {
+      data.lockAspectRatio = lockRatioToggle.checked;
+      if (data.lockAspectRatio) {
+        data.aspectRatio = ratioValue();
+      }
+      refreshElement(data.id);
+    });
+  }
   const layerShadowToggle = document.getElementById('prop-layer-shadow');
   if (layerShadowToggle) {
     layerShadowToggle.addEventListener('change', () => {
@@ -3013,8 +3086,49 @@ document.getElementById('file-import-html').addEventListener('change', e => {
 function buildExportHTML() {
   let inner = '';
   const projectData = JSON.stringify({ canvasW, canvasH, elements, groups }).replace(/</g, '\\u003c');
-  [...elements].sort((a,b) => a.zIndex - b.zIndex).forEach(data => {
+  const sortedElements = [...elements].sort((a,b) => a.zIndex - b.zIndex);
+  const transparentCutouts = sortedElements.filter(d => d.visible && d.type === 'box' && d.fillTransparent)
+    .map(d => ({ id: d.id, zIndex: d.zIndex, x: d.x, y: d.y, w: d.w, h: d.h, r: d.borderRadius || 0 }));
+  const cutoutMaskUrlCache = new Map();
+
+  function getCutoutMaskUrl(cutouts) {
+    if (!cutouts.length) return '';
+    const key = cutouts.map(c => `${c.id}:${c.x},${c.y},${c.w},${c.h},${c.r}`).join('|');
+    if (cutoutMaskUrlCache.has(key)) return cutoutMaskUrlCache.get(key);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasW}" height="${canvasH}">`
+      + `<rect x="0" y="0" width="${canvasW}" height="${canvasH}" fill="white"/>`
+      + cutouts.map(c => `<rect x="${c.x}" y="${c.y}" width="${c.w}" height="${c.h}" rx="${c.r}" ry="${c.r}" fill="black"/>`).join('')
+      + `</svg>`;
+    const url = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+    cutoutMaskUrlCache.set(key, url);
+    return url;
+  }
+
+  sortedElements.forEach(data => {
     if (!data.visible) return;
+
+    // Transparent boxes are cutters. We only render their border (if present).
+    const isCutout = data.type === 'box' && data.fillTransparent;
+    if (isCutout && (!(data.borderWidth > 0) || !data.borderColor)) {
+      return;
+    }
+
+    const cutoutsAbove = transparentCutouts.filter(c => c.zIndex > data.zIndex);
+    const maskUrl = getCutoutMaskUrl(cutoutsAbove);
+    const maskCss = maskUrl
+      ? [
+        `-webkit-mask-image:url('${maskUrl}')`,
+        `mask-image:url('${maskUrl}')`,
+        `-webkit-mask-repeat:no-repeat`,
+        `mask-repeat:no-repeat`,
+        `-webkit-mask-size:${canvasW}px ${canvasH}px`,
+        `mask-size:${canvasW}px ${canvasH}px`,
+        `-webkit-mask-position:${-data.x}px ${-data.y}px`,
+        `mask-position:${-data.x}px ${-data.y}px`,
+        `-webkit-mask-mode:luminance`,
+        `mask-mode:luminance`,
+      ].join(';')
+      : '';
 
     let elStyle = [
       'position:absolute',
@@ -3022,6 +3136,7 @@ function buildExportHTML() {
       `width:${data.w}px`, `height:${data.h}px`,
       `z-index:${data.zIndex}`,
       `opacity:${data.opacity}`,
+      maskCss,
       layerShadowFilter(data, 1) ? `filter:${layerShadowFilter(data, 1)}` : '',
       effectiveAnimStyle(data, 1),
     ].filter(Boolean).join(';');
@@ -3124,9 +3239,7 @@ function buildExportHTML() {
       }
       case 'box':
         if (data.fillTransparent) {
-          // Erase only what is below this z-layer, allowing higher layers to render above.
-          content = `<div style="position:absolute;inset:0;background:#000;border-radius:${data.borderRadius}px;mix-blend-mode:destination-out"></div>
-          ${data.borderWidth > 0 ? `<div style="position:absolute;inset:0;border:${data.borderWidth}px solid ${data.borderColor};border-radius:${data.borderRadius}px;box-sizing:border-box"></div>` : ''}`;
+          content = `${data.borderWidth > 0 ? `<div style="width:100%;height:100%;background:transparent;border:${data.borderWidth}px solid ${data.borderColor};border-radius:${data.borderRadius}px;box-sizing:border-box"></div>` : ''}`;
         } else {
           content = `<div style="width:100%;height:100%;background:${data.bgColor};border:${data.borderWidth}px solid ${data.borderColor};border-radius:${data.borderRadius}px"></div>`;
         }
