@@ -595,7 +595,7 @@ const twitchState = {
   ws: null,
   connected: false,
   isAnon: false,
-  channel: '',
+  channels: [],
   username: '',
   token: '',
 };
@@ -857,17 +857,17 @@ function utilityColorToPickerValue(color, fallback = '#a78bfa') {
 
 function ensureUtilityStreams(data) {
   if (!data || data.type !== 'utility') return [];
+  const legacyChannel = normalizeChannelName(data.channel || '');
   const existing = Array.isArray(data.utilStreams) ? data.utilStreams : [];
   if (!existing.length) {
-    const fallbackChannel = normalizeChannelName(data.channel || '');
-    data.utilStreams = [{ channel: fallbackChannel, color: '#a78bfa' }];
-    data.channel = fallbackChannel;
+    data.utilStreams = [{ channel: legacyChannel, color: '#a78bfa' }];
+    delete data.channel;
     return data.utilStreams;
   }
 
   data.utilStreams = existing.map((stream, idx) => {
     const hasChannelProp = !!stream && Object.prototype.hasOwnProperty.call(stream, 'channel');
-    const sourceChannel = hasChannelProp ? stream.channel : (idx === 0 ? data.channel : '');
+    const sourceChannel = hasChannelProp ? stream.channel : (idx === 0 ? legacyChannel : '');
     const channel = normalizeChannelName(sourceChannel || '');
     const color = normalizeUtilityColor(stream?.color, '#a78bfa');
     return { channel, color };
@@ -877,8 +877,13 @@ function ensureUtilityStreams(data) {
     data.utilStreams = [data.utilStreams[0]];
   }
 
-  data.channel = normalizeChannelName(data.utilStreams[0]?.channel || data.channel);
+  delete data.channel;
   return data.utilStreams;
+}
+
+function syncPrimaryUtilityChannel(data) {
+  if (!data || data.type !== 'utility') return;
+  ensureUtilityStreams(data);
 }
 
 function normalizeUtilityCommandAction(action) {
@@ -1028,6 +1033,50 @@ function utilityStreamColorForRoom(data, room) {
   if (!channel) return '';
   const stream = utilityStreamMap(data).get(channel);
   return normalizeUtilityColor(stream?.color, '');
+}
+
+function resetUtilityRuntimeState(data, status = 'Not connected') {
+  if (!data || data.type !== 'utility') return;
+  clearUtilityControlTimer(data.id);
+  data.utilItems = [];
+  data.utilReaction = null;
+  data.utilConnected = false;
+  data.utilStatus = status;
+}
+
+function disconnectTwitchSession(status = 'Disconnected') {
+  const channels = Array.isArray(twitchState.channels) ? [...twitchState.channels] : [];
+  if (twitchState.ws) {
+    try {
+      twitchState.ws.onopen = null;
+      twitchState.ws.onmessage = null;
+      twitchState.ws.onerror = null;
+      twitchState.ws.onclose = null;
+      twitchState.ws.close();
+    } catch {}
+  }
+  twitchState.ws = null;
+  twitchState.connected = false;
+  twitchState.isAnon = false;
+  twitchState.channels = [];
+  twitchState.username = '';
+  twitchState.token = '';
+
+  if (channels.length) {
+    setUtilityStatusByChannels(channels, status, false);
+  }
+}
+
+function invalidateUtilityConnection(data, status = 'Settings changed - reconnect Twitch') {
+  if (!data || data.type !== 'utility') return;
+  resetUtilityRuntimeState(data, status);
+  disconnectTwitchSession(status);
+}
+
+function utilityUsesConnectedSession(data) {
+  if (!data || data.type !== 'utility') return false;
+  const channels = Array.isArray(twitchState.channels) ? twitchState.channels : [];
+  return channels.some(channel => utilityStreamMap(data).has(channel));
 }
 
 function widgetUsesAnyChannel(data, channels) {
@@ -1514,17 +1563,12 @@ function connectTwitch() {
   if (!data || data.type !== 'utility') return;
   data.utilMode = 'chat';
 
-  if (twitchState.ws) {
-    try { twitchState.ws.close(); } catch {}
-    twitchState.ws = null;
-  }
-  twitchState.connected = false;
+  disconnectTwitchSession('Disconnected');
 
   const streamMap = utilityStreamMap(data);
   let channels = [...streamMap.keys()];
   if (!channels.length) {
-    data.utilStatus = 'Add at least one streamer channel';
-    data.utilConnected = false;
+    resetUtilityRuntimeState(data, 'Add at least one streamer channel');
     refreshElement(data.id);
     return;
   }
@@ -1539,7 +1583,7 @@ function connectTwitch() {
 
   const ws = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
   twitchState.ws = ws;
-  twitchState.channel = channels[0] || '';
+  twitchState.channels = [...channels];
   twitchState.username = username;
   twitchState.token = token;
 
@@ -1607,6 +1651,8 @@ function connectTwitch() {
 
   ws.onclose = () => {
     twitchState.connected = false;
+    twitchState.ws = null;
+    twitchState.channels = [];
     setUtilityStatusByChannels(channels, 'Disconnected', false);
   };
 }
@@ -1668,7 +1714,7 @@ function defaultData(type) {
         borderRadius: 8, fillTransparent: false, opacity: 1 };
     case 'utility':
       return { ...base, w: 420, h: 180,
-        utilMode: 'chat', channel: '', username: '', oauthToken: '',
+        utilMode: 'chat', username: '', oauthToken: '',
         utilShowHeader: true,
         utilStreams: [{ channel: '', color: '#a78bfa' }],
         utilCustomColors: false,
@@ -1867,6 +1913,15 @@ function refreshElement(id) {
   if (!data) return;
   const el = previewCanvas.querySelector(`[data-id="${id}"]`);
   if (!el) return;
+  if (data.type === 'utility') {
+    const wasSelected = el.classList.contains('selected');
+    clearUtilityBubbleSim(id);
+    el.remove();
+    const nextEl = createElement(data);
+    if (wasSelected || selectedId === id) nextEl.classList.add('selected');
+    renderLayersPanel();
+    return;
+  }
   // Remove inner children (keep resize-handle and delete-btn)
   const kids = [...el.childNodes];
   kids.forEach(k => {
@@ -1886,10 +1941,6 @@ function refreshElement(id) {
   el.style.filter  = layerShadowFilter(data, zoom);
   el.style.display = data.visible ? '' : 'none';
   applyWrapperAnimation(el, data);
-
-  if (data.type === 'utility') {
-    syncUtilityBubbleSim(data);
-  }
 
   renderLayersPanel();
 }
@@ -2002,6 +2053,7 @@ previewCanvas.addEventListener('mousedown', e => {
 function deleteElement(id) {
   const data = getDataById(id);
   const gid = data?.groupId;
+  if (utilityUsesConnectedSession(data)) invalidateUtilityConnection(data);
   clearUtilityBubbleSim(id);
   elements = elements.filter(e => e.id !== id);
   const el = previewCanvas.querySelector(`[data-id="${id}"]`);
@@ -2698,6 +2750,12 @@ function bindPropsEvents(data) {
   };
   const num = v => parseFloat(v);
   const int = v => parseInt(v);
+  const refreshUtilityConfig = (status = 'Settings changed - reconnect Twitch', rerenderProps = false) => {
+    if (data.type !== 'utility') return;
+    invalidateUtilityConnection(data, status);
+    refreshElement(data.id);
+    if (rerenderProps) renderPropsPanel();
+  };
 
   // General
   bind('prop-name',    'name');
@@ -2929,8 +2987,6 @@ function bindPropsEvents(data) {
       renderPropsPanel();
     });
   }
-  bind('ut-user', 'username');
-  bind('ut-token', 'oauthToken');
   bind('ut-max', 'maxItems', int);
   bind('ut-font', 'fontFamily');
   bind('ut-size', 'fontSize', int);
@@ -2941,10 +2997,11 @@ function bindPropsEvents(data) {
   streams.forEach((_, idx) => {
     const channelInput = document.getElementById(`ut-stream-channel-${idx}`);
     if (channelInput) {
-      channelInput.addEventListener('input', () => {
+      channelInput.addEventListener('change', () => {
         streams[idx].channel = normalizeChannelName(channelInput.value);
-        data.channel = normalizeChannelName(streams[0]?.channel || '');
-        refreshElement(data.id);
+        channelInput.value = streams[idx].channel;
+        syncPrimaryUtilityChannel(data);
+        refreshUtilityConfig();
       });
     }
 
@@ -2961,19 +3018,33 @@ function bindPropsEvents(data) {
   document.getElementById('ut-stream-add')?.addEventListener('click', () => {
     const list = ensureUtilityStreams(data);
     list.push({ channel: '', color: '#ffffff' });
-    data.channel = normalizeChannelName(list[0]?.channel || '');
-    refreshElement(data.id);
-    renderPropsPanel();
+    syncPrimaryUtilityChannel(data);
+    refreshUtilityConfig('Settings changed - reconnect Twitch', true);
   });
 
   document.getElementById('ut-stream-remove')?.addEventListener('click', () => {
     const list = ensureUtilityStreams(data);
     if (list.length <= 1) return;
     list.pop();
-    data.channel = normalizeChannelName(list[0]?.channel || '');
-    refreshElement(data.id);
-    renderPropsPanel();
+    syncPrimaryUtilityChannel(data);
+    refreshUtilityConfig('Settings changed - reconnect Twitch', true);
   });
+
+  const utUser = document.getElementById('ut-user');
+  if (utUser) {
+    utUser.addEventListener('input', () => {
+      data.username = utUser.value;
+      refreshUtilityConfig();
+    });
+  }
+
+  const utToken = document.getElementById('ut-token');
+  if (utToken) {
+    utToken.addEventListener('input', () => {
+      data.oauthToken = utToken.value;
+      refreshUtilityConfig();
+    });
+  }
 
   document.getElementById('ut-connect')?.addEventListener('click', () => connectTwitch());
   document.getElementById('ut-clear')?.addEventListener('click', () => {
@@ -3029,6 +3100,7 @@ setInterval(() => { tickClocks(); tickCountdowns(); }, 500);
 // ═══════════════════════════════════════════════════════════
 document.getElementById('btn-clear').addEventListener('click', () => {
   if (!confirm('Clear all widgets?')) return;
+  disconnectTwitchSession('Disconnected');
   elements = [];
   groups = [];
   nextGroupId = 1;
@@ -3058,11 +3130,17 @@ document.getElementById('file-import-html').addEventListener('change', e => {
       const parsed = JSON.parse(match[1]);
       if (!parsed.elements || !Array.isArray(parsed.elements)) throw new Error('Invalid format');
 
+      disconnectTwitchSession('Disconnected');
       elements = parsed.elements;
       canvasW = parsed.canvasW || 1920;
       canvasH = parsed.canvasH || 1080;
       groups = parsed.groups || [];
       nextGroupId = Math.max(...groups.map(g => g.id).concat([0])) + 1;
+      elements.forEach(d => {
+        if (d.type !== 'utility') return;
+        ensureUtilityStreams(d);
+        resetUtilityRuntimeState(d);
+      });
       canvasWInput.value = canvasW;
       canvasHInput.value = canvasH;
       nextId = Math.max(...elements.map(el => el.id), 0) + 1;
@@ -3085,7 +3163,14 @@ document.getElementById('file-import-html').addEventListener('change', e => {
 // ═══════════════════════════════════════════════════════════
 function buildExportHTML() {
   let inner = '';
-  const projectData = JSON.stringify({ canvasW, canvasH, elements, groups }).replace(/</g, '\\u003c');
+  const exportElements = elements.map(data => {
+    if (data.type !== 'utility') return data;
+    const clean = { ...data };
+    ensureUtilityStreams(clean);
+    resetUtilityRuntimeState(clean);
+    return clean;
+  });
+  const projectData = JSON.stringify({ canvasW, canvasH, elements: exportElements, groups }).replace(/</g, '\\u003c');
   const sortedElements = [...elements].sort((a,b) => a.zIndex - b.zIndex);
   const transparentCutouts = sortedElements.filter(d => d.visible && d.type === 'box' && d.fillTransparent)
     .map(d => ({ id: d.id, zIndex: d.zIndex, x: d.x, y: d.y, w: d.w, h: d.h, r: d.borderRadius || 0 }));
