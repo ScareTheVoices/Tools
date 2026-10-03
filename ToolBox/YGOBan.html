@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Banlist Check</title>
+<style>
+:root{--bg:#14121f;--panel:#201c33;--line:#3a3458;--tx:#f1eefb;--mut:#a39dc0;--ac:#c9a74a;--ban:#ff5a6a;--lim:#ff9a2e;--semi:#f2d34a;--ok:#4cd68a}
+@media(prefers-color-scheme:light){:root{--bg:#f4f1e8;--panel:#fff;--line:#d8d2bd;--tx:#1d1a2b;--mut:#6a6580;--ac:#8a6a10;--ban:#c8102e;--lim:#c76a00;--semi:#9a7d00;--ok:#13804a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 Georgia,'Times New Roman',serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+main{max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:1.5rem;margin:4px 0 2px}
+.sub{color:var(--mut);font-size:.9rem;margin:0 0 14px;font-family:system-ui,sans-serif}
+.row{display:flex;gap:8px;margin-bottom:10px}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;font-family:system-ui,sans-serif}
+.seg button{background:none;border:0;color:var(--mut);padding:8px 14px;font-size:.9rem}
+.seg button.on{background:var(--ac);color:#14121f;font-weight:600}
+input[type=text]{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--tx);padding:12px;font-size:16px;font-family:inherit}
+.btn{background:var(--ac);color:#14121f;border:0;border-radius:10px;padding:12px 16px;font:600 1rem system-ui,sans-serif}
+.btn.alt{background:var(--panel);color:var(--tx);border:1px solid var(--line)}
+.scan{width:100%;padding:16px;font-size:1.05rem;margin:4px 0 6px;display:block;text-align:center}
+.note{color:var(--mut);font:.82rem system-ui,sans-serif;margin:6px 0 14px}
+#sum{font:.9rem system-ui,sans-serif;margin:12px 0 8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.item{display:flex;gap:10px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px}
+.item img{width:52px;height:72px;object-fit:cover;border-radius:6px;flex:none;background:var(--line)}
+.body{flex:1;min-width:0}
+.name{font-weight:700;overflow-wrap:anywhere}
+.meta{color:var(--mut);font:.82rem system-ui,sans-serif}
+.badge{display:inline-block;font:700 .8rem system-ui,sans-serif;padding:3px 9px;border-radius:99px;border:1.5px solid;margin:4px 0}
+.b-Forbidden{color:var(--ban)}.b-Limited{color:var(--lim)}.b-Semi-Limited{color:var(--semi)}.b-Unlimited{color:var(--ok)}.b-x{color:var(--mut)}
+.fix{display:flex;gap:6px;margin-top:6px}
+.fix input{padding:7px 9px;font-size:15px}
+.fix button{padding:7px 12px;font-size:.9rem}
+</style>
+</head>
+<body>
+<main>
+<h1>Banlist Check</h1>
+<p class="sub">Search a card or scan photos to see if it is Unlimited, Limited, or Forbidden.</p>
+
+<div class="row">
+  <div class="seg" id="fmt"><button data-f="tcg">TCG</button><button data-f="ocg">OCG</button></div>
+</div>
+
+<label class="btn scan" for="cam">Scan card photos</label>
+<input type="file" id="cam" accept="image/*" capture="environment" multiple hidden>
+<input type="file" id="pick" accept="image/*" multiple hidden>
+<div class="row"><button class="btn alt" style="flex:1" id="gal">Choose from gallery</button></div>
+<p class="note">Tip: frame the card flat, in good light, with the name at the top. Take as many photos as you like; each is read in turn. Camera shots add one card each; the gallery lets you pick many at once.</p>
+
+<div class="row">
+  <input type="text" id="q" placeholder="Search card name" autocomplete="off" autocapitalize="off" spellcheck="false">
+</div>
+<div id="found"></div>
+
+<div id="sum"><span id="counts">Scanned cards appear here.</span><button class="btn alt" id="clr" style="padding:6px 12px;font-size:.85rem" hidden>Clear</button></div>
+<div id="list"></div>
+<p class="note">Ban data comes live from YGOPRODeck. For tournaments, confirm against Konami's official list.</p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script>
+const API='https://db.ygoprodeck.com/api/v7/cardinfo.php';
+const $=id=>document.getElementById(id);
+let fmt='tcg';
+try{fmt=localStorage.getItem('fmt')||'tcg'}catch(e){}
+const items=[];const queue=[];let busy=false,worker=null,nid=0;
+
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const norm=s=>s.toLowerCase().replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+function lev(a,b){const m=[...Array(b.length+1).keys()];for(let i=1;i<=a.length;i++){let p=m[0];m[0]=i;for(let j=1;j<=b.length;j++){const t=m[j];m[j]=Math.min(m[j]+1,m[j-1]+1,p+(a[i-1]===b[j-1]?0:1));p=t}}return m[b.length]}
+const sim=(a,b)=>1-lev(a,b)/Math.max(a.length,b.length,1);
+function status(c){const b=c.banlist_info&&c.banlist_info['ban_'+fmt];return b==='Banned'?'Forbidden':(b||'Unlimited')}
+function badge(s){const cp={Forbidden:'Forbidden · 0 copies',Limited:'Limited · 1 copy','Semi-Limited':'Semi-Limited · 2 copies',Unlimited:'Unlimited · 3 copies'};return `<span class="badge b-${s}">${cp[s]}</span>`}
+
+async function lookup(q){
+  try{const r=await fetch(API+'?fname='+encodeURIComponent(q));if(!r.ok)return[];return(await r.json()).data||[]}catch(e){return[]}
+}
+function best(cards,text){let b=null;for(const c of cards){const s=sim(norm(c.name),text);if(!b||s>b.score)b={card:c,score:s}}return b}
+
+async function matchText(raw){
+  const lines=raw.split('\n').map(norm).filter(l=>l.length>2).sort((a,b)=>b.length-a.length).slice(0,4);
+  let top=null;
+  for(const line of lines){
+    let res=await lookup(line);
+    if(!res.length){
+      const words=line.split(' ').filter(w=>w.length>3).sort((a,b)=>b.length-a.length).slice(0,2);
+      for(const w of words){res=await lookup(w);if(res.length)break}
+    }
+    const b=best(res,line);
+    if(b&&(!top||b.score>top.score))top=b;
+    if(top&&top.score>0.85)break;
+  }
+  return top&&top.score>0.5?top:null;
+}
+
+async function ocr(bmp,frac){
+  const scale=Math.min(1,1400/bmp.width);
+  const w=Math.round(bmp.width*scale),h=Math.round(bmp.height*scale*frac);
+  const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+  cv.getContext('2d').drawImage(bmp,0,0,bmp.width,bmp.height*frac,0,0,w,h);
+  worker=worker||await Tesseract.createWorker('eng');
+  return (await worker.recognize(cv)).data.text;
+}
+
+async function scan(it){
+  it.state='reading';draw(it);
+  try{
+    const bmp=await createImageBitmap(it.file,{imageOrientation:'from-image'});
+    for(const frac of [0.22,1]){
+      const txt=await ocr(bmp,frac);
+      const l=txt.split('\n').map(norm).filter(x=>x.length>2).sort((a,b)=>b.length-a.length)[0];
+      if(l&&!it.text)it.text=l;
+      const m=await matchText(txt);
+      if(m){it.card=m.card;it.text=norm(m.card.name);break}
+    }
+    it.state=it.card?'done':'nomatch';
+  }catch(e){it.state='error'}
+  draw(it);tally();
+}
+async function pump(){
+  if(busy)return;busy=true;
+  while(queue.length)await scan(queue.shift());
+  busy=false;
+}
+function addFiles(files){
+  for(const f of files){
+    const it={id:nid++,file:f,url:URL.createObjectURL(f),state:'queued',text:'',card:null};
+    items.unshift(it);queue.push(it);draw(it);
+  }
+  tally();pump();
+}
+
+function draw(it){
+  let el=$('i'+it.id);
+  if(!el){el=document.createElement('div');el.id='i'+it.id;el.className='item';$('list').prepend(el)}
+  let main;
+  if(it.card){const s=status(it.card);main=`<div class="name">${esc(it.card.name)}</div>${badge(s)}<div class="meta">${esc(it.card.type)}</div>`}
+  else{
+    const msg={queued:'Waiting in line…',reading:worker?'Reading card…':'Loading text reader (first scan takes a moment)…',nomatch:'No match. Edit the name below and search again.',error:'Could not read this photo. Enter the name below.'}[it.state];
+    main=`<div class="name b-x">${msg}</div>`;
+  }
+  const fix=(it.state==='queued'||it.state==='reading')?'':`<div class="fix"><input type="text" value="${esc(it.text)}" aria-label="Card name"><button class="btn alt">Search</button></div>`;
+  el.innerHTML=`<img src="${it.url}" alt=""><div class="body">${main}${fix}</div>`;
+  const b=el.querySelector('.fix button');
+  if(b)b.onclick=async()=>{
+    const q=norm(el.querySelector('.fix input').value);if(!q)return;
+    b.textContent='…';
+    let res=await lookup(q);let m=best(res,q);
+    if(!m||m.score<0.4)m=await matchText(q);
+    it.text=q;if(m){it.card=m.card;it.state='done'}else{it.card=null;it.state='nomatch'}
+    draw(it);tally();
+  };
+}
+function tally(){
+  const c={Forbidden:0,Limited:0,'Semi-Limited':0,Unlimited:0};let pend=0;
+  items.forEach(i=>{if(i.card)c[status(i.card)]++;else pend++});
+  $('clr').hidden=!items.length;
+  $('counts').textContent=items.length?`${c.Forbidden} forbidden · ${c.Limited} limited · ${c['Semi-Limited']} semi-limited · ${c.Unlimited} unlimited`+(pend?` · ${pend} unresolved`:''):'Scanned cards appear here.';
+}
+
+// manual search
+let tm;
+$('q').addEventListener('input',e=>{
+  clearTimeout(tm);const q=e.target.value.trim();
+  if(q.length<2){$('found').innerHTML='';return}
+  tm=setTimeout(async()=>{
+    const res=await lookup(q);const n=norm(q);
+    res.sort((a,b)=>{const an=norm(a.name),bn=norm(b.name);return (bn.startsWith(n)-an.startsWith(n))||an.localeCompare(bn)});
+    if($('q').value.trim()!==q)return;
+    $('found').innerHTML=res.length?res.slice(0,15).map(c=>`<div class="item"><div class="body"><div class="name">${esc(c.name)}</div>${badge(status(c))}<div class="meta">${esc(c.type)}</div></div></div>`).join(''):'<p class="note">No card found with that name.</p>';
+  },350);
+});
+
+// format toggle
+function setFmt(f){
+  fmt=f;try{localStorage.setItem('fmt',f)}catch(e){}
+  document.querySelectorAll('#fmt button').forEach(b=>b.classList.toggle('on',b.dataset.f===f));
+  items.forEach(draw);tally();$('q').dispatchEvent(new Event('input'));
+}
+document.querySelectorAll('#fmt button').forEach(b=>b.onclick=()=>setFmt(b.dataset.f));
+$('cam').onchange=e=>{addFiles([...e.target.files]);e.target.value=''};
+$('pick').onchange=e=>{addFiles([...e.target.files]);e.target.value=''};
+$('gal').onclick=()=>$('pick').click();
+$('clr').onclick=()=>{items.length=0;queue.length=0;$('list').innerHTML='';tally()};
+setFmt(fmt);
+</script>
+</body>
+</html>
