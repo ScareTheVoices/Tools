@@ -243,6 +243,12 @@
       50% { transform: translate(var(--float-x, 0px), var(--float-y, -8px)); }
     }
 
+    @keyframes wobble-rock {
+      0%, 100% { transform: rotate(0deg); }
+      25% { transform: rotate(var(--wobble-angle, 8deg)); }
+      75% { transform: rotate(calc(var(--wobble-angle, 8deg) * -1)); }
+    }
+
     /* Countdown */
     .w-countdown { font-family: monospace; text-align: center; }
 
@@ -538,6 +544,7 @@
     <button class="widget-btn" data-type="progress">  <span class="icon">📊</span> Progress Bar</button>
     <button class="widget-btn" data-type="ticker">    <span class="icon">📰</span> Scrolling Ticker</button>
     <button class="widget-btn" data-type="box">       <span class="icon">▭</span> Shape / Box</button>
+    <button class="widget-btn" data-type="sound">     <span class="icon">🔊</span> Sound Source</button>
     <button class="widget-btn" data-type="utility">   <span class="icon">🧰</span> Utility</button>
 
     <div class="panel-section-title" style="margin-top:8px">Layers</div>
@@ -560,7 +567,7 @@
 <div class="modal-backdrop" id="export-modal">
   <div class="modal">
     <h2>⬇ Export Overlay HTML</h2>
-    <p>Copy the code below and save it as <strong>.html</strong>. In OBS, add a <strong>Browser Source</strong> and set it to a Local File pointing to this file. Set the browser source size to match your canvas dimensions.</p>
+    <p>Copy the code below and save it as <strong>.html</strong>. In OBS, add a <strong>Browser Source</strong> and set it to a Local File pointing to this file. Set the browser source size to match your canvas dimensions and make sure its audio is enabled.</p>
     <textarea id="export-code" readonly></textarea>
     <div class="modal-actions">
       <button class="btn btn-secondary" id="btn-modal-close">Close</button>
@@ -661,12 +668,46 @@ function floatVector(direction, distance) {
 
 function animationStyle(data, scale = 1) {
   if (!data || !data.animate) return '';
-  const type = String(data.animType || 'float');
-  if (type !== 'float') return '';
+  return buildAnimCss(data, scale);
+}
 
-  const speed = Math.max(0.2, parseFloat(data.animSpeed || 4));
+const wobbleKeyframes = new Map();
+function registerWobbleKeyframes(cycles, speed, pause, angle) {
+  const name = ('wobble-' + cycles + '-' + speed + '-' + pause + '-' + angle).replace(/\./g, 'p');
+  if (wobbleKeyframes.has(name)) return name;
+  const total = cycles * speed + pause;
+  const pct = t => (Math.round(t / total * 10000) / 100) + '%';
+  let steps = '';
+  for (let i = 0; i < cycles; i++) {
+    const t0 = i * speed;
+    steps += `${pct(t0)} { transform: rotate(0deg); } ${pct(t0 + speed / 4)} { transform: rotate(${angle}deg); } ${pct(t0 + speed * 3 / 4)} { transform: rotate(-${angle}deg); } `;
+  }
+  steps += `${pct(cycles * speed)}, 100% { transform: rotate(0deg); }`;
+  const css = `@keyframes ${name} { ${steps} }\n`;
+  wobbleKeyframes.set(name, css);
+  let st = document.getElementById('wobble-kf-style');
+  if (!st) { st = document.createElement('style'); st.id = 'wobble-kf-style'; document.head.appendChild(st); }
+  st.textContent += css;
+  return name;
+}
+
+function buildAnimCss(src, scale = 1) {
+  const type = String(src.animType || 'float');
+  const speed = Math.max(0.2, parseFloat(src.animSpeed || 4));
+  if (type === 'wobble') {
+    const angle = Math.min(45, Math.max(1, parseFloat(src.wobbleAngle || 8)));
+    const pause = Math.min(60, Math.max(0, parseFloat(src.wobblePause) || 0));
+    if (pause > 0) {
+      const cycles = Math.min(50, Math.max(1, Math.round(parseFloat(src.wobbleCycles) || 3)));
+      const name = registerWobbleKeyframes(cycles, speed, pause, angle);
+      const total = Math.round((cycles * speed + pause) * 1000) / 1000;
+      return `animation:${name} ${total}s ease-in-out infinite;will-change:transform;`;
+    }
+    return `animation:wobble-rock ${speed}s ease-in-out infinite;--wobble-angle:${angle}deg;will-change:transform;`;
+  }
+  if (type !== 'float') return '';
   const dist = Math.max(2, Math.round(10 * Math.max(0.1, scale)));
-  const vec = floatVector(data.floatDirection, dist);
+  const vec = floatVector(src.floatDirection, dist);
   return `animation:float-bob ${speed}s ease-in-out infinite;--float-x:${vec.x}px;--float-y:${vec.y}px;will-change:transform;`;
 }
 
@@ -693,12 +734,7 @@ function effectiveAnimStyle(data, scale = 1) {
   }
   if (!src && data.animate) src = data;
   if (!src) return '';
-  const type = String(src.animType || 'float');
-  if (type !== 'float') return '';
-  const speed = Math.max(0.2, parseFloat(src.animSpeed || 4));
-  const dist = Math.max(2, Math.round(10 * Math.max(0.1, scale)));
-  const vec = floatVector(src.floatDirection, dist);
-  return `animation:float-bob ${speed}s ease-in-out infinite;--float-x:${vec.x}px;--float-y:${vec.y}px;will-change:transform;`;
+  return buildAnimCss(src, scale);
 }
 
 function applyWrapperAnimation(el, data) {
@@ -718,6 +754,7 @@ function applyWrapperAnimation(el, data) {
     el.style.willChange = '';
     el.style.removeProperty('--float-x');
     el.style.removeProperty('--float-y');
+    el.style.removeProperty('--wobble-angle');
   }
 }
 
@@ -1665,6 +1702,8 @@ function defaultData(type) {
     id: nextId++, type,
     x: 40, y: 40, w: 300, h: 60,
     visible: true, opacity: 1, zIndex: elements.length + 1,
+    advancedControlEnabled: false, advancedCommand: '',
+    advancedAction: 'toggle', advancedDuration: 5,
     lockAspectRatio: false,
     layerShadow: false,
     layerShadowAngle: 315,
@@ -1712,6 +1751,9 @@ function defaultData(type) {
         bgColor: 'rgba(122,85,191,0.35)',
         borderColor: '#a78bfa', borderWidth: 2,
         borderRadius: 8, fillTransparent: false, opacity: 1 };
+    case 'sound':
+      return { ...base, w: 170, h: 64,
+        sounds: [] };
     case 'utility':
       return { ...base, w: 420, h: 180,
         utilMode: 'chat', username: '', oauthToken: '',
@@ -1815,6 +1857,13 @@ function renderInner(data) {
     case 'box':
       return `<div style="width:100%;height:100%;background:${data.fillTransparent ? 'transparent' : data.bgColor};
         border:${data.borderWidth}px solid ${data.borderColor};border-radius:${data.borderRadius}px"></div>`;
+    case 'sound': {
+      const sounds = Array.isArray(data.sounds) ? data.sounds : [];
+      const count = sounds.filter(sound => !!sound.src).length;
+      return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;gap:8px;
+        background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:${14 * zoom}px">
+        <span>🔊</span><span>${count ? `${count} sound${count === 1 ? '' : 's'} configured` : 'Configure sounds'}</span></div>`;
+    }
     case 'utility': {
       return renderUtilityWidget(data, zoom);
     }
@@ -1823,6 +1872,69 @@ function renderInner(data) {
 
 function escHtml(s) {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function normalizeOverlayCommand(command) {
+  return String(command || '').trim().toLowerCase();
+}
+
+function isValidOverlayCommand(command) {
+  return /^![^\s!]+$/.test(normalizeOverlayCommand(command));
+}
+
+function isAdvancedControlled(data) {
+  return !!data?.advancedControlEnabled && isValidOverlayCommand(data.advancedCommand);
+}
+
+function ensureSoundEntries(data) {
+  if (!data || data.type !== 'sound') return [];
+  if (!Array.isArray(data.sounds)) {
+    data.sounds = data.soundSrc
+      ? [{
+        id: 1,
+        src: data.soundSrc,
+        name: data.soundName || '',
+        mode: data.soundMode === 'command' ? 'command' : 'always',
+        command: data.soundCommand || '',
+        volume: data.soundVolume ?? 1,
+        duckVolume: data.soundDuckVolume ?? 0.2,
+      }]
+      : [];
+  }
+  const usedIds = new Set();
+  data.sounds = data.sounds.map((sound, index) => {
+    const candidateId = Number(sound?.id);
+    let id = Number.isInteger(candidateId) && candidateId > 0 && !usedIds.has(candidateId)
+      ? candidateId
+      : index + 1;
+    while (usedIds.has(id)) id += 1;
+    usedIds.add(id);
+    return {
+      id,
+      src: String(sound?.src || ''),
+      name: String(sound?.name || ''),
+      mode: ['command', 'chat'].includes(sound?.mode) ? sound.mode : 'always',
+      command: String(sound?.command || ''),
+      volume: Math.max(0, Math.min(1, Number(sound?.volume ?? 1))),
+      duckVolume: Math.max(0, Math.min(1, Number(sound?.duckVolume ?? 0.2))),
+      crossfade: !!sound?.crossfade,
+      crossfadeDuration: Math.max(0.02, Math.min(0.5, Number(sound?.crossfadeDuration ?? 0.12))),
+    };
+  });
+  delete data.soundSrc;
+  delete data.soundName;
+  delete data.soundMode;
+  delete data.soundCommand;
+  delete data.soundVolume;
+  delete data.soundDuckVolume;
+  return data.sounds;
+}
+
+function exportInitialVisibility(data) {
+  if (!isAdvancedControlled(data)) return !!data.visible;
+  if (data.advancedAction === 'show') return false;
+  if (data.advancedAction === 'hide') return true;
+  return !!data.visible;
 }
 
 // Build image widget DOM directly
@@ -2133,7 +2245,7 @@ document.querySelectorAll('.widget-btn').forEach(btn => {
 // ═══════════════════════════════════════════════════════════
 //  LAYERS PANEL
 // ═══════════════════════════════════════════════════════════
-const ICONS = { text:'T', clock:'🕐', countdown:'⏳', image:'🖼', progress:'📊', ticker:'📰', box:'▭', utility:'🧰' };
+const ICONS = { text:'T', clock:'🕐', countdown:'⏳', image:'🖼', progress:'📊', ticker:'📰', box:'▭', sound:'🔊', utility:'🧰' };
 
 function renderLayersPanel() {
   const panel = document.getElementById('layers-panel');
@@ -2354,15 +2466,19 @@ function renderGroupPropsPanel(grp) {
     ${grp.animate ? `
     <div class="prop-row"><label>Animation</label>
       <select id="grp-anim-type">
-        <option value="float" selected>Float</option>
+        <option value="float"${(grp.animType || 'float') === 'float' ? ' selected' : ''}>Float</option>
+        <option value="wobble"${grp.animType === 'wobble' ? ' selected' : ''}>Wobble</option>
       </select>
     </div>
-    <div class="prop-row"><label>Direction</label>
+    <div class="prop-row"${grp.animType === 'wobble' ? ' style="display:none"' : ''}><label>Direction</label>
       <select id="grp-float-dir">
         ${dirOptions.map(([v, l]) => `<option value="${v}"${grp.floatDirection === v ? ' selected' : ''}>${l}</option>`).join('')}
       </select>
     </div>
     <div class="prop-row"><label>Speed (s)</label><input id="grp-anim-speed" type="number" value="${grp.animSpeed || 4}" min="0.2" max="30" step="0.1" /></div>
+    ${grp.animType === 'wobble' ? `<div class="prop-row"><label>Angle (°)</label><input id="grp-wobble-angle" type="number" value="${grp.wobbleAngle || 8}" min="1" max="45" step="1" /></div>
+    <div class="prop-row"><label>Wobbles</label><input id="grp-wobble-cycles" type="number" value="${grp.wobbleCycles || 3}" min="1" max="50" step="1" /></div>
+    <div class="prop-row"><label>Pause (s)</label><input id="grp-wobble-pause" type="number" value="${grp.wobblePause || 0}" min="0" max="60" step="0.5" /></div>` : ''}
     ` : ''}
   </div>
   <div class="prop-group">
@@ -2387,6 +2503,10 @@ function bindGroupPropsEvents(grp) {
 
   bindG('grp-name', 'name');
   bindG('grp-anim-type', 'animType');
+  document.getElementById('grp-anim-type')?.addEventListener('change', () => renderGroupPropsPanel(grp));
+  bindG('grp-wobble-angle', 'wobbleAngle', num);
+  bindG('grp-wobble-cycles', 'wobbleCycles', num);
+  bindG('grp-wobble-pause', 'wobblePause', num);
   bindG('grp-float-dir', 'floatDirection');
   bindG('grp-anim-speed', 'animSpeed', num);
 
@@ -2477,6 +2597,65 @@ function renderPropsPanel() {
     </div>
   </div>`;
 
+  if (data.type !== 'sound') {
+    html += `
+    <div class="prop-group">
+      <div class="prop-group-title">Chat Controls</div>
+      <div class="prop-row"><label>Enable</label><input id="adv-control-enabled" type="checkbox" ${data.advancedControlEnabled ? 'checked' : ''} /></div>
+      ${data.advancedControlEnabled ? `
+      <div class="prop-row"><label>Command</label><input id="adv-control-command" type="text" value="${escHtml(data.advancedCommand || '')}" placeholder="!menu" /></div>
+      <div class="prop-row"><label>Action</label>
+        <select id="adv-control-action">
+          <option value="show"${data.advancedAction === 'show' ? ' selected' : ''}>Show</option>
+          <option value="hide"${data.advancedAction === 'hide' ? ' selected' : ''}>Hide</option>
+          <option value="toggle"${(data.advancedAction || 'toggle') === 'toggle' ? ' selected' : ''}>Toggle</option>
+        </select>
+      </div>
+      ${data.advancedAction !== 'toggle' ? `
+      <div class="prop-row"><label>${data.advancedAction === 'hide' ? 'Show after (sec)' : 'Hide after (sec)'}</label>
+        <input id="adv-control-duration" type="number" value="${data.advancedDuration ?? 5}" min="0" max="3600" step="0.5" />
+      </div>
+      ` : ''}
+      <div class="prop-row"><span style="font-size:.7rem;color:var(--text-muted)">Commands are read from channels configured in Twitch Utility widgets. Use one command starting with !. Set seconds to 0 to disable the automatic reverse action.</span></div>
+      ` : ''}
+    </div>`;
+  }
+
+  if (data.type === 'sound') {
+    const sounds = ensureSoundEntries(data);
+    html += `
+    <div class="prop-group">
+      <div class="prop-group-title">Sound Source</div>
+      ${sounds.map(sound => `
+      <div class="prop-group" style="padding:8px;border:1px solid var(--border);border-radius:6px;margin:8px 0">
+        <div class="prop-row"><strong style="font-size:.76rem;overflow:hidden;text-overflow:ellipsis">${escHtml(sound.name || `Sound ${sound.id}`)}</strong>
+          <button class="btn btn-danger" type="button" data-sound-remove="${sound.id}" style="padding:3px 8px">Remove</button>
+        </div>
+        <div class="prop-row"><label>Audio File</label><input type="file" accept="audio/*" data-sound-file="${sound.id}" /></div>
+        <div class="prop-row"><label>Mode</label>
+          <select data-sound-mode="${sound.id}">
+            <option value="always"${sound.mode === 'always' ? ' selected' : ''}>Always</option>
+            <option value="command"${sound.mode === 'command' ? ' selected' : ''}>Command</option>
+            <option value="chat"${sound.mode === 'chat' ? ' selected' : ''}>Chat Message</option>
+          </select>
+        </div>
+        ${sound.mode === 'command' ? `
+        <div class="prop-row"><label>Command</label><input type="text" data-sound-command="${sound.id}" value="${escHtml(sound.command)}" placeholder="!sound" /></div>
+        ` : sound.mode === 'chat' ? `
+        <div class="prop-row"><span style="font-size:.7rem;color:var(--text-muted)">Plays once for each new chat message (skipped while it is still playing). Needs a Twitch Utility widget with a channel.</span></div>
+        ` : `
+        <div class="prop-row"><label>Duck volume</label><input type="range" min="0" max="100" step="1" data-sound-duck="${sound.id}" value="${Math.round(sound.duckVolume * 100)}" /><span data-sound-duck-label="${sound.id}">${Math.round(sound.duckVolume * 100)}%</span></div>
+        <div class="prop-row"><label>Crossfade loop</label><input type="checkbox" data-sound-crossfade="${sound.id}" ${sound.crossfade ? 'checked' : ''} /></div>
+        ${sound.crossfade ? `<div class="prop-row"><label>Crossfade (ms)</label><input type="range" min="20" max="500" step="10" data-sound-crossfade-duration="${sound.id}" value="${Math.round(sound.crossfadeDuration * 1000)}" /><span data-sound-crossfade-label="${sound.id}">${Math.round(sound.crossfadeDuration * 1000)} ms</span></div>` : ''}
+        `}
+        <div class="prop-row"><label>Volume</label><input type="range" min="0" max="100" step="1" data-sound-volume="${sound.id}" value="${Math.round(sound.volume * 100)}" /><span data-sound-volume-label="${sound.id}">${Math.round(sound.volume * 100)}%</span></div>
+      </div>
+      `).join('')}
+      <div class="prop-row"><button class="btn btn-secondary" id="sound-add" style="width:100%">+ Add Sound</button></div>
+      <div class="prop-row"><span style="font-size:.7rem;color:var(--text-muted)">Upload an audio file to include it in the exported overlay. Always sounds loop from startup; optional crossfade blends the loop boundary. Command sounds play once and ignore repeats until finished.</span></div>
+    </div>`;
+  }
+
   if (data.type === 'text') {
     html += `
     <div class="prop-group">
@@ -2509,9 +2688,10 @@ function renderPropsPanel() {
       ${data.animate ? `<div class="prop-row"><label>Animation</label>
         <select id="pt-anim-type">
           <option value="float"${(data.animType || 'float') === 'float' ? ' selected' : ''}>Float</option>
+          <option value="wobble"${data.animType === 'wobble' ? ' selected' : ''}>Wobble</option>
         </select>
       </div>
-      <div class="prop-row"><label>Direction</label>
+      <div class="prop-row"${data.animType === 'wobble' ? ' style="display:none"' : ''}><label>Direction</label>
         <select id="pt-float-dir">
           <option value="up-down"${(data.floatDirection || 'up-down') === 'up-down' ? ' selected' : ''}>Up / Down</option>
           <option value="left-right"${data.floatDirection === 'left-right' ? ' selected' : ''}>Left / Right</option>
@@ -2519,7 +2699,10 @@ function renderPropsPanel() {
           <option value="diag-down-right"${data.floatDirection === 'diag-down-right' ? ' selected' : ''}>Diagonal Down-Right</option>
         </select>
       </div>
-      <div class="prop-row"><label>Speed (s)</label><input id="pt-anim-speed" type="number" value="${data.animSpeed || 4}" min="0.2" max="30" step="0.1" /></div>` : ''}
+      <div class="prop-row"><label>Speed (s)</label><input id="pt-anim-speed" type="number" value="${data.animSpeed || 4}" min="0.2" max="30" step="0.1" /></div>
+      ${data.animType === 'wobble' ? `<div class="prop-row"><label>Angle (°)</label><input id="pt-wobble-angle" type="number" value="${data.wobbleAngle || 8}" min="1" max="45" step="1" /></div>
+      <div class="prop-row"><label>Wobbles</label><input id="pt-wobble-cycles" type="number" value="${data.wobbleCycles || 3}" min="1" max="50" step="1" /></div>
+      <div class="prop-row"><label>Pause (s)</label><input id="pt-wobble-pause" type="number" value="${data.wobblePause || 0}" min="0" max="60" step="0.5" /></div>` : ''}` : ''}
     </div>`;
   }
 
@@ -2577,9 +2760,10 @@ function renderPropsPanel() {
       ${data.animate ? `<div class="prop-row"><label>Animation</label>
         <select id="img-anim-type">
           <option value="float"${(data.animType || 'float') === 'float' ? ' selected' : ''}>Float</option>
+          <option value="wobble"${data.animType === 'wobble' ? ' selected' : ''}>Wobble</option>
         </select>
       </div>
-      <div class="prop-row"><label>Direction</label>
+      <div class="prop-row"${data.animType === 'wobble' ? ' style="display:none"' : ''}><label>Direction</label>
         <select id="img-float-dir">
           <option value="up-down"${(data.floatDirection || 'up-down') === 'up-down' ? ' selected' : ''}>Up / Down</option>
           <option value="left-right"${data.floatDirection === 'left-right' ? ' selected' : ''}>Left / Right</option>
@@ -2587,7 +2771,10 @@ function renderPropsPanel() {
           <option value="diag-down-right"${data.floatDirection === 'diag-down-right' ? ' selected' : ''}>Diagonal Down-Right</option>
         </select>
       </div>
-      <div class="prop-row"><label>Speed (s)</label><input id="img-anim-speed" type="number" value="${data.animSpeed || 4}" min="0.2" max="30" step="0.1" /></div>` : ''}
+      <div class="prop-row"><label>Speed (s)</label><input id="img-anim-speed" type="number" value="${data.animSpeed || 4}" min="0.2" max="30" step="0.1" /></div>
+      ${data.animType === 'wobble' ? `<div class="prop-row"><label>Angle (°)</label><input id="img-wobble-angle" type="number" value="${data.wobbleAngle || 8}" min="1" max="45" step="1" /></div>
+      <div class="prop-row"><label>Wobbles</label><input id="img-wobble-cycles" type="number" value="${data.wobbleCycles || 3}" min="1" max="50" step="1" /></div>
+      <div class="prop-row"><label>Pause (s)</label><input id="img-wobble-pause" type="number" value="${data.wobblePause || 0}" min="0" max="60" step="0.5" /></div>` : ''}` : ''}
       <div class="prop-row"><label>Upload</label><input type="file" id="img-file-upload" accept="image/*" /></div>
     </div>`;
   }
@@ -2760,6 +2947,138 @@ function bindPropsEvents(data) {
   // General
   bind('prop-name',    'name');
   bind('prop-opacity', 'opacity', num);
+  if (data.type === 'sound') {
+    ensureSoundEntries(data);
+    const getSound = id => data.sounds.find(sound => sound.id === Number(id));
+    document.querySelectorAll('[data-sound-file]').forEach(input => {
+      input.addEventListener('change', () => {
+        const soundId = input.dataset.soundFile;
+        const file = input.files?.[0];
+        if (!file) return;
+        if (!file.type.startsWith('audio/')) {
+          showSnack('Choose a valid audio file', 'var(--danger)');
+          input.value = '';
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result !== 'string' || !reader.result.startsWith('data:audio/')) {
+            showSnack('Audio file could not be loaded', 'var(--danger)');
+            return;
+          }
+          const sound = getSound(soundId);
+          if (!sound) return;
+          sound.src = reader.result;
+          sound.name = file.name;
+          refreshElement(data.id);
+          renderPropsPanel();
+        };
+        reader.onerror = () => showSnack('Audio file could not be read', 'var(--danger)');
+        reader.readAsDataURL(file);
+      });
+    });
+    document.querySelectorAll('[data-sound-remove]').forEach(button => {
+      button.addEventListener('click', () => {
+        const index = data.sounds.findIndex(sound => sound.id === Number(button.dataset.soundRemove));
+        if (index < 0) return;
+        data.sounds.splice(index, 1);
+        refreshElement(data.id);
+        renderPropsPanel();
+      });
+    });
+    document.getElementById('sound-add')?.addEventListener('click', () => {
+      const nextId = data.sounds.reduce((max, sound) => Math.max(max, sound.id), 0) + 1;
+      data.sounds.push({
+        id: nextId,
+        src: '',
+        name: '',
+        mode: 'always',
+        command: '',
+        volume: 1,
+        duckVolume: 0.2,
+        crossfade: false,
+        crossfadeDuration: 0.12,
+      });
+      refreshElement(data.id);
+      renderPropsPanel();
+    });
+    document.querySelectorAll('[data-sound-mode]').forEach(select => {
+      select.addEventListener('change', () => {
+        const sound = getSound(select.dataset.soundMode);
+        if (!sound) return;
+        sound.mode = ['command', 'chat'].includes(select.value) ? select.value : 'always';
+        renderPropsPanel();
+      });
+    });
+    document.querySelectorAll('[data-sound-command]').forEach(input => {
+      input.addEventListener('input', () => {
+        const sound = getSound(input.dataset.soundCommand);
+        if (sound) sound.command = input.value;
+      });
+    });
+    document.querySelectorAll('[data-sound-volume]').forEach(input => {
+      input.addEventListener('input', () => {
+        const sound = getSound(input.dataset.soundVolume);
+        if (!sound) return;
+        sound.volume = Number(input.value) / 100;
+        const label = document.querySelector(`[data-sound-volume-label="${sound.id}"]`);
+        if (label) label.textContent = `${input.value}%`;
+      });
+    });
+    document.querySelectorAll('[data-sound-duck]').forEach(input => {
+      input.addEventListener('input', () => {
+        const sound = getSound(input.dataset.soundDuck);
+        if (!sound) return;
+        sound.duckVolume = Number(input.value) / 100;
+        const label = document.querySelector(`[data-sound-duck-label="${sound.id}"]`);
+        if (label) label.textContent = `${input.value}%`;
+      });
+    });
+    document.querySelectorAll('[data-sound-crossfade]').forEach(input => {
+      input.addEventListener('change', () => {
+        const sound = getSound(input.dataset.soundCrossfade);
+        if (!sound) return;
+        sound.crossfade = input.checked;
+        renderPropsPanel();
+      });
+    });
+    document.querySelectorAll('[data-sound-crossfade-duration]').forEach(input => {
+      input.addEventListener('input', () => {
+        const sound = getSound(input.dataset.soundCrossfadeDuration);
+        if (!sound) return;
+        sound.crossfadeDuration = Number(input.value) / 1000;
+        const label = document.querySelector(`[data-sound-crossfade-label="${sound.id}"]`);
+        if (label) label.textContent = `${input.value} ms`;
+      });
+    });
+  }
+  const advancedControlToggle = document.getElementById('adv-control-enabled');
+  if (advancedControlToggle) {
+    advancedControlToggle.addEventListener('change', () => {
+      data.advancedControlEnabled = advancedControlToggle.checked;
+      renderPropsPanel();
+    });
+  }
+  const advancedCommandInput = document.getElementById('adv-control-command');
+  if (advancedCommandInput) {
+    advancedCommandInput.addEventListener('input', () => {
+      data.advancedCommand = advancedCommandInput.value;
+    });
+  }
+  const advancedActionSelect = document.getElementById('adv-control-action');
+  if (advancedActionSelect) {
+    advancedActionSelect.addEventListener('change', () => {
+      data.advancedAction = advancedActionSelect.value;
+      renderPropsPanel();
+    });
+  }
+  const advancedDurationInput = document.getElementById('adv-control-duration');
+  if (advancedDurationInput) {
+    advancedDurationInput.addEventListener('input', () => {
+      const duration = Number(advancedDurationInput.value);
+      data.advancedDuration = Number.isFinite(duration) ? Math.max(0, duration) : 0;
+    });
+  }
   bind('prop-shadow-distance', 'layerShadowDistance', num);
   bind('prop-shadow-blur', 'layerShadowBlur', num);
   bind('prop-shadow-color', 'layerShadowColor');
@@ -2878,6 +3197,10 @@ function bindPropsEvents(data) {
   bind('pt-padding',    'padding',  int);
   bind('pt-radius',     'borderRadius', int);
   bind('pt-anim-type',  'animType');
+  document.getElementById('pt-anim-type')?.addEventListener('change', () => renderPropsPanel());
+  bind('pt-wobble-angle', 'wobbleAngle', num);
+  bind('pt-wobble-cycles', 'wobbleCycles', num);
+  bind('pt-wobble-pause', 'wobblePause', num);
   bind('pt-float-dir',  'floatDirection');
   bind('pt-anim-speed', 'animSpeed', num);
   const ptAnimate = document.getElementById('pt-animate');
@@ -2914,6 +3237,10 @@ function bindPropsEvents(data) {
   // Image
   bind('img-fit', 'objectFit');
   bind('img-anim-type', 'animType');
+  document.getElementById('img-anim-type')?.addEventListener('change', () => renderPropsPanel());
+  bind('img-wobble-angle', 'wobbleAngle', num);
+  bind('img-wobble-cycles', 'wobbleCycles', num);
+  bind('img-wobble-pause', 'wobblePause', num);
   bind('img-float-dir', 'floatDirection');
   bind('img-anim-speed', 'animSpeed', num);
   const imgAnimate = document.getElementById('img-animate');
@@ -3137,9 +3464,12 @@ document.getElementById('file-import-html').addEventListener('change', e => {
       groups = parsed.groups || [];
       nextGroupId = Math.max(...groups.map(g => g.id).concat([0])) + 1;
       elements.forEach(d => {
-        if (d.type !== 'utility') return;
-        ensureUtilityStreams(d);
-        resetUtilityRuntimeState(d);
+        if (d.type === 'utility') {
+          ensureUtilityStreams(d);
+          resetUtilityRuntimeState(d);
+        } else if (d.type === 'sound') {
+          ensureSoundEntries(d);
+        }
       });
       canvasWInput.value = canvasW;
       canvasHInput.value = canvasH;
@@ -3164,15 +3494,64 @@ document.getElementById('file-import-html').addEventListener('change', e => {
 function buildExportHTML() {
   let inner = '';
   const exportElements = elements.map(data => {
-    if (data.type !== 'utility') return data;
-    const clean = { ...data };
-    ensureUtilityStreams(clean);
-    resetUtilityRuntimeState(clean);
-    return clean;
+    if (data.type === 'utility') {
+      const clean = { ...data };
+      ensureUtilityStreams(clean);
+      resetUtilityRuntimeState(clean);
+      return clean;
+    }
+    if (data.type === 'sound') {
+      const clean = { ...data };
+      clean.sounds = ensureSoundEntries(clean);
+      return clean;
+    }
+    return data;
   });
   const projectData = JSON.stringify({ canvasW, canvasH, elements: exportElements, groups }).replace(/</g, '\\u003c');
   const sortedElements = [...elements].sort((a,b) => a.zIndex - b.zIndex);
-  const transparentCutouts = sortedElements.filter(d => d.visible && d.type === 'box' && d.fillTransparent)
+  const activeCommandControls = sortedElements.filter(isAdvancedControlled).map(data => ({
+    kind: 'widget',
+    id: data.id,
+    command: normalizeOverlayCommand(data.advancedCommand),
+    action: ['show', 'hide', 'toggle'].includes(data.advancedAction) ? data.advancedAction : 'toggle',
+    duration: Math.max(0, Number(data.advancedDuration) || 0),
+  }));
+  const soundCommandControls = [];
+  const soundSettings = [];
+  sortedElements.filter(data => data.type === 'sound').forEach(data => {
+    ensureSoundEntries(data).forEach(sound => {
+      const audioId = `${data.id}_${sound.id}`;
+      if (!String(sound.src || '').startsWith('data:audio/')) return;
+      soundSettings.push({
+        id: audioId,
+        mode: sound.mode,
+        volume: sound.volume,
+        duckVolume: sound.duckVolume,
+        crossfade: sound.crossfade,
+        crossfadeDuration: sound.crossfadeDuration,
+      });
+      if (sound.mode === 'command' && isValidOverlayCommand(sound.command)) {
+        soundCommandControls.push({
+          kind: 'sound',
+          id: audioId,
+          command: normalizeOverlayCommand(sound.command),
+        });
+      }
+    });
+  });
+  const commandBindings = [...activeCommandControls, ...soundCommandControls];
+  const hasChatSounds = soundSettings.some(sound => sound.mode === 'chat');
+  const hasCommandControls = commandBindings.length > 0 || hasChatSounds;
+  const shouldExportElement = data => (data.type === 'sound' && ensureSoundEntries(data).some(sound => !!sound.src))
+    || data.visible || isAdvancedControlled(data)
+    || (hasCommandControls && data.type === 'utility' && utilityStreamMap(data).size > 0);
+  const overlayLayers = sortedElements.filter(data => shouldExportElement(data) && data.type !== 'sound').map(data => ({
+    id: data.id, zIndex: data.zIndex, x: data.x, y: data.y,
+    w: data.w, h: data.h, radius: data.borderRadius || 0,
+    cutout: data.type === 'box' && !!data.fillTransparent,
+  }));
+  const transparentCutouts = sortedElements.filter(d => shouldExportElement(d) && exportInitialVisibility(d)
+      && d.type === 'box' && d.fillTransparent)
     .map(d => ({ id: d.id, zIndex: d.zIndex, x: d.x, y: d.y, w: d.w, h: d.h, r: d.borderRadius || 0 }));
   const cutoutMaskUrlCache = new Map();
 
@@ -3190,14 +3569,19 @@ function buildExportHTML() {
   }
 
   sortedElements.forEach(data => {
-    if (!data.visible) return;
+    if (!shouldExportElement(data)) return;
+    if (data.type === 'sound') {
+      ensureSoundEntries(data).forEach(sound => {
+        if (!String(sound.src || '').startsWith('data:audio/')) return;
+        const audioId = `${data.id}_${sound.id}`;
+        inner += `<audio id="overlay_audio_${audioId}" src="${escHtml(sound.src)}" preload="auto"></audio>\n`;
+      });
+      return;
+    }
+    const initiallyVisible = exportInitialVisibility(data);
 
     // Transparent boxes are cutters. We only render their border (if present).
     const isCutout = data.type === 'box' && data.fillTransparent;
-    if (isCutout && (!(data.borderWidth > 0) || !data.borderColor)) {
-      return;
-    }
-
     const cutoutsAbove = transparentCutouts.filter(c => c.zIndex > data.zIndex);
     const maskUrl = getCutoutMaskUrl(cutoutsAbove);
     const maskCss = maskUrl
@@ -3221,6 +3605,7 @@ function buildExportHTML() {
       `width:${data.w}px`, `height:${data.h}px`,
       `z-index:${data.zIndex}`,
       `opacity:${data.opacity}`,
+      initiallyVisible ? '' : 'display:none',
       maskCss,
       layerShadowFilter(data, 1) ? `filter:${layerShadowFilter(data, 1)}` : '',
       effectiveAnimStyle(data, 1),
@@ -3423,6 +3808,8 @@ function buildExportHTML() {
     if(raw.indexOf('@')===0){ var firstSpace=raw.indexOf(' '); if(firstSpace>1){ tagPart=raw.slice(1,firstSpace); core=raw.slice(firstSpace+1); } }
     var priv = core.match(/^:([^!]+)![^ ]+ PRIVMSG #([^ ]+) :([\\s\\S]*)$/);
     if(priv){ var tags=parseTags(tagPart),name=priv[1],room=priv[2].toLowerCase(),msg=priv[3],stream=streamMap[room]; if(!stream) return;
+      if(window.dispatchOverlayCommand) window.dispatchOverlayCommand(msg,tags.id);
+      if(window.dispatchOverlayChatMessage) window.dispatchOverlayChatMessage();
       if(mode==='chat'){ var chatterColor=normColor(tags.color||'',''); var customColor=utilCustomColors?stream.color:''; push({kind:'chat',room:room,color:customColor,chatterColor:chatterColor,user:name,message:msg,text:name+': '+msg}); }
       return;
     }
@@ -3436,7 +3823,7 @@ function buildExportHTML() {
         break;
       }
     }
-    inner += `<div style="${elStyle}">\n  ${content}\n</div>\n`;
+    inner += `<div id="overlay_widget_${data.id}" style="${elStyle}">\n  ${content}\n</div>\n`;
   });
 
   return `<!DOCTYPE html>
@@ -3451,7 +3838,260 @@ function buildExportHTML() {
       0%, 100% { transform: translate(0, 0); }
       50% { transform: translate(var(--float-x, 0px), var(--float-y, -8px)); }
     }
+    @keyframes wobble-rock {
+      0%, 100% { transform: rotate(0deg); }
+      25% { transform: rotate(var(--wobble-angle, 8deg)); }
+      75% { transform: rotate(calc(var(--wobble-angle, 8deg) * -1)); }
+    }
+    ${[...wobbleKeyframes.values()].join('    ')}
   </style>
+  <script>
+  (function(){
+    var controls = ${JSON.stringify(commandBindings).replace(/</g, '\\u003c')};
+    var sounds = ${JSON.stringify(soundSettings).replace(/</g, '\\u003c')};
+    var layers = ${JSON.stringify(overlayLayers).replace(/</g, '\\u003c')};
+    var timers = Object.create(null);
+    var seen = Object.create(null);
+    var activeCommandSounds = Object.create(null);
+    var alwaysAudioNodes = Object.create(null);
+    var audioContext = null;
+    function syncAlwaysVolumes() {
+      var ducking = Object.keys(activeCommandSounds).length > 0;
+      sounds.forEach(function(sound) {
+        if (sound.mode !== 'always') return;
+        var audioNodes = alwaysAudioNodes[sound.id];
+        var volume = sound.volume * (ducking ? sound.duckVolume : 1);
+        if (audioNodes && audioContext) {
+          audioNodes.master.gain.setTargetAtTime(volume, audioContext.currentTime, 0.04);
+          return;
+        }
+        var audio = document.getElementById('overlay_audio_' + sound.id);
+        if (audio) audio.volume = volume;
+      });
+    }
+    function finishCommandSound(id) {
+      if (!activeCommandSounds[id]) return;
+      delete activeCommandSounds[id];
+      syncAlwaysVolumes();
+    }
+    function playCommandSound(id) {
+      var sound = sounds.find(function(item) { return item.id === id && item.mode !== 'always'; });
+      var audio = document.getElementById('overlay_audio_' + id);
+      if (!sound || !audio || (!audio.paused && !audio.ended)) return;
+      audio.volume = sound.volume;
+      audio.currentTime = 0;
+      activeCommandSounds[id] = true;
+      syncAlwaysVolumes();
+      try {
+        var playback = audio.play();
+        if (playback && typeof playback.catch === 'function') {
+          playback.catch(function(error) {
+            finishCommandSound(id);
+            console.error('Command sound playback failed:', error);
+          });
+        }
+      } catch (error) {
+        finishCommandSound(id);
+        console.error('Command sound playback failed:', error);
+      }
+    }
+    function startNativeLoop(sound) {
+      var audio = document.getElementById('overlay_audio_' + sound.id);
+      if (!audio) return;
+      audio.loop = true;
+      audio.volume = sound.volume * (Object.keys(activeCommandSounds).length ? sound.duckVolume : 1);
+      try {
+        var playback = audio.play();
+        if (playback && typeof playback.catch === 'function') {
+          playback.catch(function(error) {
+            console.error('Always sound playback failed:', error);
+          });
+        }
+      } catch (error) {
+        console.error('Always sound playback failed:', error);
+      }
+    }
+    async function startAlwaysSounds() {
+      var alwaysSounds = sounds.filter(function(sound) { return sound.mode === 'always'; });
+      if (!alwaysSounds.length) return;
+      var AudioContextType = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextType) {
+        console.error('Seamless audio looping is unavailable; falling back to native audio looping.');
+        alwaysSounds.forEach(startNativeLoop);
+        return;
+      }
+      try {
+        if (!audioContext) audioContext = new AudioContextType();
+        if (audioContext.state === 'suspended') await audioContext.resume();
+      } catch (error) {
+        console.error('Audio context could not be started; falling back to native audio looping:', error);
+        alwaysSounds.forEach(startNativeLoop);
+        return;
+      }
+      alwaysSounds.forEach(async function(sound) {
+        var audio = document.getElementById('overlay_audio_' + sound.id);
+        if (!audio) return;
+        try {
+          var response = await fetch(audio.src);
+          if (!response.ok) throw new Error('Audio request failed with status ' + response.status);
+          var buffer = await audioContext.decodeAudioData(await response.arrayBuffer());
+          var masterGain = audioContext.createGain();
+          masterGain.gain.value = sound.volume * (Object.keys(activeCommandSounds).length ? sound.duckVolume : 1);
+          masterGain.connect(audioContext.destination);
+          if (sound.crossfade) {
+            var loopDuration = buffer.duration;
+            var fadeDuration = Math.min(sound.crossfadeDuration, loopDuration / 2);
+            if (!(fadeDuration > 0) || !(loopDuration > fadeDuration)) {
+              throw new Error('Audio is too short for the configured crossfade.');
+            }
+            var state = { master: masterGain, sources: new Set(), timer: 0 };
+            var nextStart = audioContext.currentTime + 0.05;
+            function scheduleCrossfades() {
+              var horizon = audioContext.currentTime + Math.max(1, fadeDuration * 4);
+              while (nextStart < horizon) {
+                let source = audioContext.createBufferSource();
+                let voiceGain = audioContext.createGain();
+                let startAt = nextStart;
+                let fadeOutAt = startAt + loopDuration - fadeDuration;
+                source.buffer = buffer;
+                voiceGain.gain.setValueAtTime(0, startAt);
+                voiceGain.gain.linearRampToValueAtTime(1, startAt + fadeDuration);
+                voiceGain.gain.setValueAtTime(1, fadeOutAt);
+                voiceGain.gain.linearRampToValueAtTime(0, startAt + loopDuration);
+                source.connect(voiceGain);
+                voiceGain.connect(masterGain);
+                state.sources.add(source);
+                source.onended = function() {
+                  state.sources.delete(source);
+                  source.disconnect();
+                  voiceGain.disconnect();
+                };
+                source.start(startAt);
+                source.stop(startAt + loopDuration);
+                nextStart += loopDuration - fadeDuration;
+              }
+            }
+            scheduleCrossfades();
+            state.timer = window.setInterval(scheduleCrossfades, 100);
+            alwaysAudioNodes[sound.id] = state;
+          } else {
+            var source = audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.loop = true;
+            source.connect(masterGain);
+            alwaysAudioNodes[sound.id] = { master: masterGain, source: source };
+            source.start();
+          }
+        } catch (error) {
+          console.error('Seamless audio loop setup failed; falling back to native audio looping:', error);
+          startNativeLoop(sound);
+        }
+      });
+    }
+    function refreshMasks() {
+      var cutouts = layers.filter(function(layer) {
+        var node = document.getElementById('overlay_widget_' + layer.id);
+        return layer.cutout && node && node.style.display !== 'none';
+      });
+      layers.forEach(function(layer) {
+        var target = document.getElementById('overlay_widget_' + layer.id);
+        if (!target) return;
+        var above = cutouts.filter(function(cutout) { return cutout.zIndex > layer.zIndex; });
+        if (!above.length) {
+          target.style.webkitMaskImage = '';
+          target.style.maskImage = '';
+          target.style.webkitMaskRepeat = '';
+          target.style.maskRepeat = '';
+          target.style.webkitMaskSize = '';
+          target.style.maskSize = '';
+          target.style.webkitMaskPosition = '';
+          target.style.maskPosition = '';
+          target.style.webkitMaskMode = '';
+          target.style.maskMode = '';
+          return;
+        }
+        var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="${canvasW}" height="${canvasH}">'
+          + '<rect x="0" y="0" width="${canvasW}" height="${canvasH}" fill="white"/>'
+          + above.map(function(cutout) {
+            return '<rect x="' + cutout.x + '" y="' + cutout.y + '" width="' + cutout.w
+              + '" height="' + cutout.h + '" rx="' + cutout.radius + '" ry="' + cutout.radius + '" fill="black"/>';
+          }).join('')
+          + '</svg>';
+        var image = 'url("data:image/svg+xml;utf8,' + encodeURIComponent(svg) + '")';
+        var position = (-layer.x) + 'px ' + (-layer.y) + 'px';
+        target.style.webkitMaskImage = image;
+        target.style.maskImage = image;
+        target.style.webkitMaskRepeat = 'no-repeat';
+        target.style.maskRepeat = 'no-repeat';
+        target.style.webkitMaskSize = '${canvasW}px ${canvasH}px';
+        target.style.maskSize = '${canvasW}px ${canvasH}px';
+        target.style.webkitMaskPosition = position;
+        target.style.maskPosition = position;
+        target.style.webkitMaskMode = 'luminance';
+        target.style.maskMode = 'luminance';
+      });
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+      refreshMasks();
+      sounds.forEach(function(sound) {
+        var audio = document.getElementById('overlay_audio_' + sound.id);
+        if (!audio) return;
+        if (sound.mode !== 'always') {
+          audio.addEventListener('ended', function() { finishCommandSound(sound.id); });
+          audio.addEventListener('error', function() {
+            finishCommandSound(sound.id);
+            console.error('Command sound could not be loaded:', sound.id);
+          });
+        } else {
+          audio.addEventListener('error', function() {
+            console.error('Always sound could not be loaded:', sound.id);
+          });
+        }
+      });
+      startAlwaysSounds();
+    });
+    window.dispatchOverlayChatMessage = function() {
+      sounds.forEach(function(sound) { if (sound.mode === 'chat') playCommandSound(sound.id); });
+    };
+    window.dispatchOverlayCommand = function(message, eventId) {
+      var token = String(message || '').trim().split(/\\s+/)[0].toLowerCase();
+      if (!token) return;
+      var matches = controls.filter(function(control) { return control.command === token; });
+      if (!matches.length) return;
+      if (eventId && seen[eventId]) return;
+      if (eventId) {
+        seen[eventId] = true;
+        window.setTimeout(function() { delete seen[eventId]; }, 10000);
+      }
+      matches.forEach(function(control) {
+        if (control.kind === 'sound') {
+          playCommandSound(control.id);
+          return;
+        }
+        var target = document.getElementById('overlay_widget_' + control.id);
+        if (!target) return;
+        if (timers[control.id]) {
+          window.clearTimeout(timers[control.id]);
+          delete timers[control.id];
+        }
+        if (control.action === 'toggle') {
+          target.style.display = target.style.display === 'none' ? '' : 'none';
+          return;
+        }
+        var show = control.action === 'show';
+        target.style.display = show ? '' : 'none';
+        if (control.duration > 0) {
+          timers[control.id] = window.setTimeout(function() {
+            target.style.display = show ? 'none' : '';
+            delete timers[control.id];
+            refreshMasks();
+          }, control.duration * 1000);
+        }
+      });
+      refreshMasks();
+    };
+  })();
+  <\/script>
 </head>
 <body>
 <div id="overlay-root">
@@ -3463,6 +4103,35 @@ ${inner}
 }
 
 document.getElementById('btn-export').addEventListener('click', () => {
+  const enabledControls = elements.filter(data => data.advancedControlEnabled);
+  const invalidControl = enabledControls.find(data => !isValidOverlayCommand(data.advancedCommand));
+  if (invalidControl) {
+    showSnack(`Enter a valid !command for "${invalidControl.name}"`, 'var(--danger)');
+    return;
+  }
+  const soundWidgets = elements.filter(data => data.type === 'sound');
+  const incompleteSoundWidget = soundWidgets.find(data =>
+    !ensureSoundEntries(data).length || ensureSoundEntries(data).some(sound => !String(sound.src || '').startsWith('data:audio/'))
+  );
+  if (incompleteSoundWidget) {
+    showSnack(`Add an audio file to each sound in "${incompleteSoundWidget.name}"`, 'var(--danger)');
+    return;
+  }
+  const invalidSoundCommand = soundWidgets.flatMap(data =>
+    ensureSoundEntries(data)
+      .filter(sound => sound.mode === 'command' && !isValidOverlayCommand(sound.command))
+      .map(sound => ({ widget: data, sound }))
+  )[0];
+  if (invalidSoundCommand) {
+    showSnack(`Enter a valid !command for "${invalidSoundCommand.sound.name || `Sound ${invalidSoundCommand.sound.id}`}"`, 'var(--danger)');
+    return;
+  }
+  const hasChatCommands = enabledControls.length
+    || soundWidgets.some(data => ensureSoundEntries(data).some(sound => sound.mode === 'command' || sound.mode === 'chat'));
+  if (hasChatCommands && !elements.some(data => data.type === 'utility' && utilityStreamMap(data).size > 0)) {
+    showSnack('Add a Twitch Utility widget with a channel to enable chat controls', 'var(--danger)');
+    return;
+  }
   document.getElementById('export-code').value = buildExportHTML();
   document.getElementById('export-modal').classList.add('open');
 });
