@@ -1284,7 +1284,7 @@ function utilityTextChatItemHtml(item, data, scale, index, animate = true) {
   const userSize = Math.max(9, Math.round(bodyFont * 0.62));
   const accent = utilityItemAccent(item, data, index);
   const messageColor = utilityItemMessageColor(item, data, index);
-  const inner = `<div style="position:relative;padding:${Math.max(9, Math.round(11 * scale))}px ${Math.max(11, Math.round(15 * scale))}px ${Math.max(10, Math.round(12 * scale))}px ${Math.max(15, Math.round(19 * scale))}px;border-radius:${rowRadius}px;background:linear-gradient(135deg, rgba(7,10,18,.92), rgba(24,30,48,.82));border:1px solid rgba(255,255,255,.12);box-shadow:0 ${Math.max(8, Math.round(12 * scale))}px ${Math.max(18, Math.round(24 * scale))}px rgba(0,0,0,.24);overflow:hidden">
+  const inner = `<div data-ut-card="1" style="position:relative;padding:${Math.max(9, Math.round(11 * scale))}px ${Math.max(11, Math.round(15 * scale))}px ${Math.max(10, Math.round(12 * scale))}px ${Math.max(15, Math.round(19 * scale))}px;border-radius:${rowRadius}px;background:linear-gradient(135deg, rgba(7,10,18,.92), rgba(24,30,48,.82));border:1px solid rgba(255,255,255,.12);box-shadow:0 ${Math.max(8, Math.round(12 * scale))}px ${Math.max(18, Math.round(24 * scale))}px rgba(0,0,0,.24);overflow:hidden">
     <div style="position:absolute;left:0;top:0;bottom:0;width:${Math.max(4, Math.round(5 * scale))}px;background:${accent}"></div>
     ${item.room ? `<div style="font-size:${Math.max(8, Math.round(bodyFont * 0.5))}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${accent};opacity:.9;padding-left:${Math.max(2, Math.round(2 * scale))}px">#${escHtml(item.room)}</div>` : ''}
     ${item.user ? `<div style="font-size:${userSize}px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:${accent};margin-bottom:${Math.max(3, Math.round(4 * scale))}px;padding-left:${Math.max(2, Math.round(2 * scale))}px">${escHtml(item.user)}</div>` : ''}
@@ -3987,9 +3987,10 @@ function buildExportHTML() {
         const safeSize = parseInt(data.fontSize || 16);
         const safeMax = Math.max(1, parseInt(data.maxItems || 6));
         const safeRadius = parseInt(data.borderRadius || 8);
-          content = `<div id="ut_${data.id}" style="width:100%;height:100%;padding:6px;background:${safeBg};border-radius:${safeRadius}px;overflow:hidden;display:flex;flex-direction:column;gap:4px">
+          content = `<style>#ut_list_${data.id}::-webkit-scrollbar{display:none}#ut_list_${data.id} [data-ut-item="1"]{cursor:pointer}#ut_list_${data.id} [data-ut-item="1"].selected,#ut_list_${data.id} [data-ut-item="1"].selected [data-ut-card="1"]{outline:2px solid #a78bfa;outline-offset:2px;filter:brightness(1.15)}</style>
+<div id="ut_${data.id}" style="width:100%;height:100%;padding:6px;background:${safeBg};border-radius:${safeRadius}px;overflow:hidden;display:flex;flex-direction:column;gap:4px">
         ${safeShowHeader ? `<div id="ut_head_${data.id}" style="font-size:${Math.max(10, Math.round(safeSize * 0.85))}px;opacity:.8;font-family:${safeFont};color:${safeColor};font-weight:700;letter-spacing:.04em">Twitch ${safeMode.toUpperCase()}</div>` : ''}
-  <div id="ut_list_${data.id}" style="font-size:${safeSize}px;font-family:${safeFont};color:${safeColor};overflow:hidden;flex:1;min-height:0;position:relative">Connecting...</div>
+  <div id="ut_list_${data.id}" tabindex="-1" style="font-size:${safeSize}px;font-family:${safeFont};color:${safeColor};overflow-x:hidden;overflow-y:auto;scrollbar-width:none;-ms-overflow-style:none;overscroll-behavior:contain;flex:1;min-height:0;position:relative;outline:none">Connecting...</div>
 </div>
 <script>
 (function(){
@@ -3997,6 +3998,50 @@ function buildExportHTML() {
   var listEl=document.getElementById('ut_list_${data.id}');
   var headEl=document.getElementById('ut_head_${data.id}');
   var items=[];
+  var followBottom=true;
+  var selectedChatItem=null;
+  function isAtBottom(){ return !listEl || listEl.scrollHeight-listEl.scrollTop-listEl.clientHeight<=2; }
+  function scrollToBottom(){ if(!listEl) return; listEl.scrollTop=listEl.scrollHeight; followBottom=true; }
+  if(listEl) listEl.addEventListener('scroll',function(){ followBottom=isAtBottom(); },{passive:true});
+  if(listEl) listEl.addEventListener('click',function(event){
+    var item=event.target.closest&&event.target.closest('[data-ut-item="1"]');
+    if(!item||!listEl.contains(item)) return;
+    if(selectedChatItem===item){
+      item.classList.remove('selected');
+      selectedChatItem=null;
+      return;
+    }
+    if(selectedChatItem&&selectedChatItem.isConnected) selectedChatItem.classList.remove('selected');
+    selectedChatItem=item;
+    selectedChatItem.classList.add('selected');
+    listEl.focus();
+  });
+  if(listEl) listEl.addEventListener('keydown',function(event){
+    if((event.key!=='Backspace'&&event.key!=='Delete')||!selectedChatItem) return;
+    var selectedItem=selectedChatItem;
+    var body=selectedItem.parentElement;
+    var index=body?Array.prototype.indexOf.call(body.children,selectedItem):-1;
+    if(index<0) return;
+    event.preventDefault();
+    var shouldFollow=followBottom||isAtBottom();
+    var previousScrollTop=listEl.scrollTop;
+    var itemTop=selectedItem.getBoundingClientRect().top-listEl.getBoundingClientRect().top+previousScrollTop;
+    var next=selectedItem.nextElementSibling;
+    var removedHeight=next?next.offsetTop-selectedItem.offsetTop:selectedItem.offsetHeight;
+    items.splice(index,1);
+    selectedItem.remove();
+    selectedChatItem=null;
+    if(!items.length){
+      listBodyEl=null;
+      render();
+      return;
+    }
+    if(shouldFollow) scrollToBottom();
+    else {
+      if(itemTop<previousScrollTop) listEl.scrollTop=Math.max(0,previousScrollTop-removedHeight);
+      followBottom=false;
+    }
+  });
   function normChannel(v){ return String(v||'').trim().toLowerCase().replace(/^#/, ''); }
   function normColor(v,fallback){ var c=String(v||'').trim(); return c||fallback; }
   var streamMap={};
@@ -4008,20 +4053,20 @@ function buildExportHTML() {
   function streamColor(item){ var room=normChannel(item&&item.room||''); var stream=room?streamMap[room]:null; return stream?normColor(stream.color,''):''; }
   function accentFor(item,index){ if(utilCustomColors){ return normColor(streamColor(item), '${safeColor}'); } return normColor(item.chatterColor, accent(item.user||item.room||index||'chat')); }
   function msgColor(item,index){ return '${safeColor}'; }
-  function normalRow(item,index){ var n=norm(item); var color=accentFor(n,index); return '<div style="padding:9px 14px;border-radius:16px;background:rgba(8,12,20,.62);border:1px solid rgba(255,255,255,.08);box-shadow:0 10px 18px rgba(0,0,0,.18)">'+(n.room?'<div style="font-size:${Math.max(8, Math.round(safeSize * 0.5))}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:'+color+';opacity:.85">#'+esc(n.room)+'</div>':'')+(n.user?'<div style="font-size:${Math.max(9, Math.round(safeSize * 0.62))}px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:'+color+';margin-bottom:3px">'+esc(n.user)+'</div>':'')+'<div style="line-height:1.35;color:'+msgColor(n,index)+'">'+esc(n.message||n.text)+'</div></div>'; }
-  function textChatRow(item,index){ var n=norm(item); var color=accentFor(n,index); return '<div style="position:relative;padding:11px 15px 12px 19px;border-radius:16px;background:linear-gradient(135deg, rgba(7,10,18,.92), rgba(24,30,48,.82));border:1px solid rgba(255,255,255,.12);box-shadow:0 12px 24px rgba(0,0,0,.24);overflow:hidden"><div style="position:absolute;left:0;top:0;bottom:0;width:5px;background:'+color+'"></div>'+(n.room?'<div style="font-size:${Math.max(8, Math.round(safeSize * 0.5))}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:'+color+';opacity:.9;padding-left:2px">#'+esc(n.room)+'</div>':'')+(n.user?'<div style="font-size:${Math.max(9, Math.round(safeSize * 0.62))}px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:'+color+';margin-bottom:4px;padding-left:2px">'+esc(n.user)+'</div>':'')+'<div style="font-size:${safeSize}px;line-height:1.3;color:'+msgColor(n,index)+';font-weight:700;padding-left:2px">'+esc(n.message||n.text)+'</div></div>'; }
-  function bubbleRow(item,index){ var n=norm(item); var color=accentFor(n,index); return '<div style="padding:${Math.max(8, Math.round(10))}px ${Math.max(10, Math.round(14))}px;border-radius:${Math.max(18, Math.round(22))}px;background:linear-gradient(135deg, rgba(18,22,34,.92), rgba(48,56,88,.84));border:1px solid rgba(255,255,255,.12);box-shadow:0 14px 28px rgba(0,0,0,.26);backdrop-filter:blur(6px);max-width:78%">'+(n.room?'<div style="font-size:${Math.max(8, Math.round(safeSize * 0.52))}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:'+color+';opacity:.9;margin-bottom:2px">#'+esc(n.room)+'</div>':'')+(n.user?'<div style="font-size:${Math.max(9, Math.round(safeSize * 0.62))}px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:'+color+';margin-bottom:2px">'+esc(n.user)+'</div>':'')+'<div style="font-size:${safeSize}px;line-height:1.25;color:'+msgColor(n,index)+';font-weight:700;text-shadow:0 1px 1px rgba(0,0,0,.35)">'+esc(n.message||n.text)+'</div></div>'; }
+  function normalRow(item,index){ var n=norm(item); var color=accentFor(n,index); return '<div data-ut-item="1" data-ut-card="1" style="padding:9px 14px;border-radius:16px;background:rgba(8,12,20,.62);border:1px solid rgba(255,255,255,.08);box-shadow:0 10px 18px rgba(0,0,0,.18)">'+(n.room?'<div style="font-size:${Math.max(8, Math.round(safeSize * 0.5))}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:'+color+';opacity:.85">#'+esc(n.room)+'</div>':'')+(n.user?'<div style="font-size:${Math.max(9, Math.round(safeSize * 0.62))}px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:'+color+';margin-bottom:3px">'+esc(n.user)+'</div>':'')+'<div style="line-height:1.35;color:'+msgColor(n,index)+'">'+esc(n.message||n.text)+'</div></div>'; }
+  function textChatRow(item,index){ var n=norm(item); var color=accentFor(n,index); return '<div data-ut-card="1" style="position:relative;padding:11px 15px 12px 19px;border-radius:16px;background:linear-gradient(135deg, rgba(7,10,18,.92), rgba(24,30,48,.82));border:1px solid rgba(255,255,255,.12);box-shadow:0 12px 24px rgba(0,0,0,.24);overflow:hidden"><div style="position:absolute;left:0;top:0;bottom:0;width:5px;background:'+color+'"></div>'+(n.room?'<div style="font-size:${Math.max(8, Math.round(safeSize * 0.5))}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:'+color+';opacity:.9;padding-left:2px">#'+esc(n.room)+'</div>':'')+(n.user?'<div style="font-size:${Math.max(9, Math.round(safeSize * 0.62))}px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:'+color+';margin-bottom:4px;padding-left:2px">'+esc(n.user)+'</div>':'')+'<div style="font-size:${safeSize}px;line-height:1.3;color:'+msgColor(n,index)+';font-weight:700;padding-left:2px">'+esc(n.message||n.text)+'</div></div>'; }
+  function bubbleRow(item,index){ var n=norm(item); var color=accentFor(n,index); return '<div data-ut-item="1" data-ut-card="1" style="padding:${Math.max(8, Math.round(10))}px ${Math.max(10, Math.round(14))}px;border-radius:${Math.max(18, Math.round(22))}px;background:linear-gradient(135deg, rgba(18,22,34,.92), rgba(48,56,88,.84));border:1px solid rgba(255,255,255,.12);box-shadow:0 14px 28px rgba(0,0,0,.26);backdrop-filter:blur(6px);max-width:78%">'+(n.room?'<div style="font-size:${Math.max(8, Math.round(safeSize * 0.52))}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:'+color+';opacity:.9;margin-bottom:2px">#'+esc(n.room)+'</div>':'')+(n.user?'<div style="font-size:${Math.max(9, Math.round(safeSize * 0.62))}px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:'+color+';margin-bottom:2px">'+esc(n.user)+'</div>':'')+'<div style="font-size:${safeSize}px;line-height:1.25;color:'+msgColor(n,index)+';font-weight:700;text-shadow:0 1px 1px rgba(0,0,0,.35)">'+esc(n.message||n.text)+'</div></div>'; }
   var listBodyEl=null;
   function ensureListBody(){
     if(!listEl) return null;
     if(listBodyEl && listEl.contains(listBodyEl)) return listBodyEl;
     if(mode==='chat' && utilStyle==='bubble'){
-      listEl.innerHTML='<div data-ut-items="1" style="display:flex;flex-direction:column;align-items:flex-start;gap:8px;overflow:hidden;height:100%;min-height:0;justify-content:flex-end"></div>';
+      listEl.innerHTML='<div data-ut-items="1" style="display:flex;flex-direction:column;align-items:flex-start;gap:8px;overflow:visible;height:auto;min-height:100%;flex:none;justify-content:flex-end"></div>';
     } else if(mode==='chat' && utilStyle==='text-chat'){
       var textAnim='ut_textchat_${data.id}';
-      listEl.innerHTML='<style>@keyframes '+textAnim+'{0%{transform:translate3d(0,22%,0);opacity:0}100%{transform:translate3d(0,0,0);opacity:1}}</style><div data-ut-items="1" style="display:flex;flex-direction:column;gap:6px;overflow:hidden;height:100%;min-height:0;justify-content:flex-end"></div>';
+      listEl.innerHTML='<style>@keyframes '+textAnim+'{0%{transform:translate3d(0,22%,0);opacity:0}100%{transform:translate3d(0,0,0);opacity:1}}</style><div data-ut-items="1" style="display:flex;flex-direction:column;gap:6px;overflow:visible;height:auto;min-height:100%;flex:none;justify-content:flex-end"></div>';
     } else {
-      listEl.innerHTML='<div data-ut-items="1" style="display:flex;flex-direction:column;gap:6px;overflow:hidden;height:100%;min-height:0;justify-content:flex-end"></div>';
+      listEl.innerHTML='<div data-ut-items="1" style="display:flex;flex-direction:column;gap:6px;overflow:visible;height:auto;min-height:100%;flex:none;justify-content:flex-end"></div>';
     }
     listBodyEl=listEl.querySelector('[data-ut-items="1"]');
     return listBodyEl;
@@ -4031,19 +4076,24 @@ function buildExportHTML() {
     if(mode==='chat' && utilStyle==='text-chat'){
       var textAnim='ut_textchat_${data.id}';
       var dur=animateNew?Math.max(.22,.32):Math.max(.22,.34+(index*.04));
-      return '<div style="animation:'+textAnim+' '+dur+'s cubic-bezier(.18,.7,.22,1) both">'+textChatRow(item,index)+'</div>';
+      return '<div data-ut-item="1" style="animation:'+textAnim+' '+dur+'s cubic-bezier(.18,.7,.22,1) both">'+textChatRow(item,index)+'</div>';
     }
     return normalRow(item,index);
   }
   function render(){
     if(!listEl) return;
+    var shouldFollow=followBottom||isAtBottom();
     if(headEl){ headEl.textContent='Twitch '+mode.toUpperCase(); }
-    if(!items.length){ listBodyEl=null; listEl.innerHTML='<div style="opacity:.7;display:flex;align-items:center;justify-content:center;height:100%;min-height:0">Waiting for Twitch data...</div>'; return; }
+    if(!items.length){ listBodyEl=null; listEl.innerHTML='<div style="opacity:.7;display:flex;align-items:center;justify-content:center;height:100%;min-height:0">Waiting for Twitch data...</div>'; followBottom=shouldFollow; return; }
     var body=ensureListBody();
     if(!body) return;
+    selectedChatItem=null;
     body.innerHTML=items.map(function(item,index){ return renderRow(item,index,false); }).join('');
+    if(shouldFollow) scrollToBottom();
+    else followBottom=false;
   }
   function push(x){
+    var shouldFollow=followBottom||isAtBottom();
     items.push(x);
     if(items.length>maxItems) items=items.slice(-maxItems);
     if(!listEl) return;
@@ -4051,8 +4101,20 @@ function buildExportHTML() {
     var body=ensureListBody();
     if(!body){ render(); return; }
     body.insertAdjacentHTML('beforeend', renderRow(x, items.length - 1, true));
-    while(body.children.length>items.length){ body.removeChild(body.firstElementChild); }
-    while(body.children.length>maxItems){ body.removeChild(body.firstElementChild); }
+    var removedHeight=0;
+    while(body.children.length>items.length || body.children.length>maxItems){
+      var first=body.firstElementChild;
+      var next=first&&first.nextElementSibling;
+      if(!first) break;
+      removedHeight+=next?next.offsetTop-first.offsetTop:first.offsetHeight;
+      if(selectedChatItem===first) selectedChatItem=null;
+      body.removeChild(first);
+    }
+    if(shouldFollow) scrollToBottom();
+    else {
+      listEl.scrollTop=Math.max(0,listEl.scrollTop-removedHeight);
+      followBottom=false;
+    }
   }
   function parseTags(tagPart){ var out={}; String(tagPart||'').split(';').forEach(function(p){var i=p.indexOf('='); if(i>-1) out[p.slice(0,i)]=p.slice(i+1);}); return out; }
   if(!channels.length){ if(listEl) listEl.textContent='Set streamer channels in editor'; return; }
