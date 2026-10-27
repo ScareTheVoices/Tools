@@ -541,6 +541,7 @@
     <button class="widget-btn" data-type="clock">     <span class="icon">🕐</span> Live Clock</button>
     <button class="widget-btn" data-type="countdown"> <span class="icon">⏳</span> Countdown Timer</button>
     <button class="widget-btn" data-type="image">     <span class="icon">🖼</span> Image / Logo</button>
+    <button class="widget-btn" data-type="video">     <span class="icon">🎬</span> Video</button>
     <button class="widget-btn" data-type="progress">  <span class="icon">📊</span> Progress Bar</button>
     <button class="widget-btn" data-type="ticker">    <span class="icon">📰</span> Scrolling Ticker</button>
     <button class="widget-btn" data-type="box">       <span class="icon">▭</span> Shape / Box</button>
@@ -1733,6 +1734,9 @@ function defaultData(type) {
     case 'image':
       return { ...base, w: 200, h: 200, src: '', objectFit: 'contain',
         animate: false, animType: 'float', floatDirection: 'up-down', animSpeed: 4 };
+    case 'video':
+    return { ...base, w: 320, h: 180, src: '', objectFit: 'contain',
+      videoMode: 'once' };
     case 'progress':
       return { ...base, w: 340, h: 52,
         label: 'Donation Goal', value: 60, max: 100,
@@ -1833,6 +1837,15 @@ function renderInner(data) {
           🖼 Click to upload image</div>`;
       }
       return `<img class="w-image" src="${data.src}" style="object-fit:${data.objectFit};width:100%;height:100%;" alt="" />`;
+    }
+    case 'video': {
+      if (!data.src) {
+        return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+          border:2px dashed var(--border);color:var(--text-muted);font-size:${12*zoom}px;border-radius:4px">
+          🎬 Upload an MP4 video</div>`;
+      }
+      const loop = data.videoMode === 'loop' ? ' loop' : '';
+      return `<video src="${escHtml(data.src)}" style="object-fit:${data.objectFit || 'contain'};width:100%;height:100%;" autoplay${loop} playsinline preload="auto"></video>`;
     }
     case 'progress': {
       const pct = Math.min(100, Math.max(0, (data.value / data.max) * 100));
@@ -2103,15 +2116,25 @@ function refreshElement(id) {
 function startDrag(e, el, data) {
   e.preventDefault();
   const startX = e.clientX, startY = e.clientY;
-  const ox = data.x, oy = data.y;
+  const dragItems = data.groupId
+    ? elements.filter(item => item.groupId === data.groupId)
+    : [data];
+  const startPositions = dragItems.map(item => ({ data: item, x: item.x, y: item.y }));
   showTransformHud(data, 'Drag');
   function onMove(ev) {
-    const dx = (ev.clientX - startX) / zoom;
-    const dy = (ev.clientY - startY) / zoom;
-    data.x = Math.max(0, Math.round(ox + dx));
-    data.y = Math.max(0, Math.round(oy + dy));
-    el.style.left = (data.x * zoom) + 'px';
-    el.style.top  = (data.y * zoom) + 'px';
+    let dx = Math.round((ev.clientX - startX) / zoom);
+    let dy = Math.round((ev.clientY - startY) / zoom);
+    dx = Math.max(dx, -Math.min(...startPositions.map(item => item.x)));
+    dy = Math.max(dy, -Math.min(...startPositions.map(item => item.y)));
+    startPositions.forEach(({ data: item, x, y }) => {
+      item.x = x + dx;
+      item.y = y + dy;
+      const itemEl = previewCanvas.querySelector(`[data-id="${item.id}"]`);
+      if (itemEl) {
+        itemEl.style.left = (item.x * zoom) + 'px';
+        itemEl.style.top = (item.y * zoom) + 'px';
+      }
+    });
     syncPositionProps(data);
     showTransformHud(data, 'Drag');
   }
@@ -2128,6 +2151,18 @@ function startResize(e, el, data) {
   e.preventDefault();
   const startX = e.clientX, startY = e.clientY;
   const ow = data.w, oh = data.h;
+  const groupItems = data.groupId && !e.altKey
+    ? elements.filter(item => item.groupId === data.groupId)
+    : [];
+  const groupPositions = groupItems.map(item => ({ data: item, x: item.x, y: item.y, w: item.w, h: item.h }));
+  const groupLeft = groupPositions.length ? Math.min(...groupPositions.map(item => item.x)) : 0;
+  const groupTop = groupPositions.length ? Math.min(...groupPositions.map(item => item.y)) : 0;
+  const groupWidth = groupPositions.length
+    ? Math.max(...groupPositions.map(item => item.x + item.w)) - groupLeft
+    : 0;
+  const groupHeight = groupPositions.length
+    ? Math.max(...groupPositions.map(item => item.y + item.h)) - groupTop
+    : 0;
   const baseRatio = (parseFloat(data.aspectRatio) > 0)
     ? parseFloat(data.aspectRatio)
     : (oh > 0 ? (ow / oh) : 1);
@@ -2135,6 +2170,39 @@ function startResize(e, el, data) {
   function onMove(ev) {
     const dx = (ev.clientX - startX) / zoom;
     const dy = (ev.clientY - startY) / zoom;
+    if (groupPositions.length > 1) {
+      let scaleX = (groupWidth + dx) / groupWidth;
+      let scaleY = (groupHeight + dy) / groupHeight;
+      if (!Number.isFinite(scaleX)) scaleX = 1;
+      if (!Number.isFinite(scaleY)) scaleY = 1;
+      scaleX = Math.max(scaleX, ...groupPositions.map(item => 20 / item.w));
+      scaleY = Math.max(scaleY, ...groupPositions.map(item => 20 / item.h));
+
+      groupPositions.forEach(({ data: item, x, y, w, h }) => {
+        item.x = Math.round(groupLeft + (x - groupLeft) * scaleX);
+        item.y = Math.round(groupTop + (y - groupTop) * scaleY);
+        if (item.lockAspectRatio) {
+          const scale = Math.abs(scaleX - 1) >= Math.abs(scaleY - 1) ? scaleX : scaleY;
+          const lockedScale = Math.max(scale, 20 / w, 20 / h);
+          item.w = Math.max(20, Math.round(w * lockedScale));
+          item.h = Math.max(20, Math.round(h * lockedScale));
+          item.aspectRatio = w / h;
+        } else {
+          item.w = Math.max(20, Math.round(w * scaleX));
+          item.h = Math.max(20, Math.round(h * scaleY));
+        }
+        const itemEl = previewCanvas.querySelector(`[data-id="${item.id}"]`);
+        if (itemEl) {
+          itemEl.style.left = (item.x * zoom) + 'px';
+          itemEl.style.top = (item.y * zoom) + 'px';
+          itemEl.style.width = (item.w * zoom) + 'px';
+          itemEl.style.height = (item.h * zoom) + 'px';
+        }
+      });
+      syncPositionProps(data);
+      showTransformHud(data, 'Resize');
+      return;
+    }
     if (data.lockAspectRatio) {
       const scaleW = (ow + dx) / ow;
       const scaleH = (oh + dy) / oh;
@@ -2285,7 +2353,7 @@ document.querySelectorAll('.widget-btn').forEach(btn => {
 // ═══════════════════════════════════════════════════════════
 //  LAYERS PANEL
 // ═══════════════════════════════════════════════════════════
-const ICONS = { text:'T', clock:'🕐', countdown:'⏳', image:'🖼', progress:'📊', ticker:'📰', box:'▭', sound:'🔊', utility:'🧰' };
+const ICONS = { text:'T', clock:'🕐', countdown:'⏳', image:'🖼', video:'🎬', progress:'📊', ticker:'📰', box:'▭', sound:'🔊', utility:'🧰' };
 
 function renderLayersPanel() {
   const panel = document.getElementById('layers-panel');
@@ -2836,6 +2904,27 @@ function renderPropsPanel() {
     </div>`;
   }
 
+  if (data.type === 'video') {
+    html += `
+    <div class="prop-group">
+      <div class="prop-group-title">Video</div>
+      <div class="prop-row"><label>Fit</label>
+        <select id="video-fit">
+          ${['contain','cover','fill','none'].map(f => `<option${(data.objectFit || 'contain')===f?' selected':''}>${f}</option>`).join('')}
+        </select>
+      </div>
+      <div class="prop-row"><label>Playback</label>
+        <select id="video-mode">
+          <option value="loop"${data.videoMode === 'loop' ? ' selected' : ''}>Loop</option>
+          <option value="once"${data.videoMode !== 'loop' ? ' selected' : ''}>Once</option>
+        </select>
+      </div>
+      <div class="prop-row"><span style="font-size:.7rem;color:var(--text-muted)">Once plays when the overlay loads.</span></div>
+      <div class="prop-row"><label>MP4 file</label><input type="file" id="video-file-upload" accept=".mp4,video/mp4" /></div>
+      ${data.src ? `<div class="prop-row"><span style="font-size:.7rem;color:var(--text-muted)">${escHtml(data.videoName || 'Video uploaded')}</span></div>` : ''}
+    </div>`;
+  }
+
   if (data.type === 'progress') {
     html += `
     <div class="prop-group">
@@ -3339,6 +3428,42 @@ function bindPropsEvents(data) {
       }
     });
   }
+  bind('video-fit', 'objectFit');
+  bind('video-mode', 'videoMode');
+  const videoFileUpload = document.getElementById('video-file-upload');
+  if (videoFileUpload) {
+    videoFileUpload.addEventListener('change', async () => {
+      const file = videoFileUpload.files[0];
+      videoFileUpload.value = '';
+      if (!file) return;
+      if (file.type !== 'video/mp4' && !/\.mp4$/i.test(file.name)) {
+        showSnack('Choose an MP4 video file', 'var(--danger)');
+        return;
+      }
+      try {
+        const src = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = String(reader.result || '');
+            if (!result.startsWith('data:')) {
+              reject(new Error('Invalid video data'));
+              return;
+            }
+            resolve(result.replace(/^data:[^;,]*/, 'data:video/mp4'));
+          };
+          reader.onerror = () => reject(reader.error || new Error('Video file could not be read'));
+          reader.readAsDataURL(file);
+        });
+        data.src = src;
+        data.videoName = file.name;
+        refreshElement(data.id);
+        renderPropsPanel();
+      } catch (error) {
+        console.error('Video file could not be read:', error);
+        showSnack('Video could not be read', 'var(--danger)');
+      }
+    });
+  }
   const findFrameIndex = id => ensureImageFrames(data).findIndex(frame => frame.id === Number(id));
   document.querySelectorAll('[data-frame-duration]').forEach(input => {
     input.addEventListener('change', () => {
@@ -3814,6 +3939,14 @@ function buildExportHTML() {
         }
         break;
       }
+      case 'video':
+      {
+        if (!String(data.src || '').startsWith('data:video/mp4')) break;
+        const loop = data.videoMode === 'loop' ? ' loop' : '';
+        const fit = ['contain', 'cover', 'fill', 'none'].includes(data.objectFit) ? data.objectFit : 'contain';
+        content = `<video id="overlay_video_${data.id}" src="${escHtml(data.src)}" style="width:100%;height:100%;object-fit:${fit}" autoplay${loop} playsinline preload="auto"></video>`;
+        break;
+      }
       case 'progress': {
         const pct = Math.min(100, Math.max(0, (data.value / data.max) * 100));
         content = `<div style="width:100%;height:100%;padding:4px;background:${data.bgColor};border-radius:${data.borderRadius}px;box-sizing:border-box;display:flex;flex-direction:column;gap:2px">
@@ -4233,6 +4366,12 @@ document.getElementById('btn-export').addEventListener('click', () => {
   const invalidControl = enabledControls.find(data => !isValidOverlayCommand(data.advancedCommand));
   if (invalidControl) {
     showSnack(`Enter a valid !command for "${invalidControl.name}"`, 'var(--danger)');
+    return;
+  }
+  const videoWidgets = elements.filter(data => data.type === 'video');
+  const incompleteVideoWidget = videoWidgets.find(data => !String(data.src || '').startsWith('data:video/mp4'));
+  if (incompleteVideoWidget) {
+    showSnack(`Add an MP4 video to "${incompleteVideoWidget.name}"`, 'var(--danger)');
     return;
   }
   const soundWidgets = elements.filter(data => data.type === 'sound');
