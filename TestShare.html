@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OBS Overlay Creator Live Loader</title>
+  <style>
+    body {
+      background: #0f1117;
+      color: #a78bfa;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+  </style>
+</head>
+<body>
+  <h2>Loading latest OBS Overlay Creator build...</h2>
+
+  <script>
+    const remoteURL = "https://raw.githubusercontent.com/ScareTheVoices/Tools/refs/heads/main/ToolBox/obsstreamcreator.html";
+
+    fetch(remoteURL)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error("Failed to fetch latest obsstreamcreator.html");
+        }
+        return response.text();
+      })
+      .then(html => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+        const icon = doc.querySelector('link[rel="icon"], link[rel="shortcut icon"]');
+        if (icon) {
+          let existing = document.querySelector('link[rel="icon"]');
+          if (existing) existing.remove();
+          document.head.appendChild(icon.cloneNode(true));
+        }
+
+        document.open();
+        document.write(html);
+        document.close();
+      })
+      .catch(error => {
+        document.body.innerHTML = `<p style="color:#f87171;">Error loading obsstreamcreator.html: ${error.message}</p>`;
+      });
+  </script>
+</body>
+</html>
