@@ -1788,6 +1788,22 @@ function utilityItemMessageColor(item, data, index = 0) {
 // Whether to show the "#channel" line above each chat message (default on).
 function utilityShowRoom(data) { return data.utilShowRoom !== false; }
 
+// Seamless scrolling ticker. The track holds two IDENTICAL halves and slides by exactly one half
+// (-50%), so the loop point is invisible. Each half repeats the message unit enough times to be
+// wider than the box, so there is never a blank gap. Duration scales with the repeat count, so
+// the scroll speed (px/sec) is the same as before.
+function tickerLoop(data) {
+  const sep = String(data.separator == null ? '' : data.separator);
+  const msgs = (data.messages || []).map(String);
+  const plain = msgs.join(sep) + sep;
+  if (!plain.trim()) return { html: '', copies: 1 };
+  const unit = msgs.map(m => escHtml(m)).join(escHtml(sep)) + escHtml(sep);
+  const estUnitW = Math.max(1, plain.length * (data.fontSize || 24) * 0.35);   // deliberately a low estimate
+  const copies = Math.max(1, Math.min(60, Math.ceil((data.w || 1920) / estUnitW)));
+  const half = unit.repeat(copies);
+  return { html: `<span>${half}</span><span>${half}</span>`, copies };
+}
+
 // Twitch emotes. The IRC "emotes" tag looks like "25:0-4,12-16/1902:6-10" (emote id : character ranges).
 function parseTwitchEmotes(tag) {
   const ranges = [];
@@ -2481,13 +2497,13 @@ function renderInner(data) {
       </div>`;
     }
     case 'ticker': {
-      const msgs = data.messages.map(m => escHtml(m)).join(escHtml(data.separator));
-      const doubled = msgs + escHtml(data.separator) + msgs;
-      const dur = data.speed;
+      const loop = tickerLoop(data);
+      const doubled = loop.html;
+      const dur = data.speed * loop.copies;
       return `<div class="w-ticker" style="width:100%;height:100%;background:${data.bgColor};
           border-radius:${data.borderRadius}px;overflow:hidden">
         <div class="ticker-inner" style="font-size:${data.fontSize*zoom}px;font-family:${data.fontFamily};
-          color:${data.color};animation-duration:${dur}s">${doubled}</div>
+          color:${data.color};white-space:pre;animation-duration:${dur}s">${doubled}</div>
       </div>`;
     }
     case 'box':
@@ -4615,10 +4631,11 @@ function buildExportHTML() {
         break;
       }
       case 'ticker': {
-        const msgs = data.messages.map(escHtml).join(escHtml(data.separator));
-        const doubled = msgs + escHtml(data.separator) + msgs;
+        const loop = tickerLoop(data);
+        const doubled = loop.html;
+        const tickerDur = data.speed * loop.copies;
         content = `<div style="width:100%;height:100%;background:${data.bgColor};border-radius:${data.borderRadius}px;overflow:hidden;white-space:nowrap;display:flex;align-items:center">
-  <div style="display:inline-block;font-size:${data.fontSize}px;font-family:${data.fontFamily};color:${data.color};animation:ticker_${data.id} ${data.speed}s linear infinite">${doubled}</div>
+  <div style="display:inline-block;font-size:${data.fontSize}px;font-family:${data.fontFamily};color:${data.color};white-space:pre;animation:ticker_${data.id} ${tickerDur}s linear infinite">${doubled}</div>
 </div>
 <style>@keyframes ticker_${data.id}{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}</style>`;
         break;
